@@ -1,0 +1,181 @@
+:root {
+  --bg: #0f1216;
+  --panel: #161b22;
+  --line: #232a33;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --good: #3fb950;
+  --bad: #f85149;
+  --warn: #d29922;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app { padding: 20px 24px 60px; max-width: 1600px; margin: 0 auto; }
+
+header {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+}
+
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+h3 { font-size: 13px; margin: 20px 0 8px; }
+h4 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+
+header p { max-width: 68ch; margin: 0; }
+
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.error { color: var(--bad); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+button {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); color: #04121f; border-color: var(--accent); font-weight: 600; }
+button.link { background: none; border: none; color: var(--muted); padding: 2px 6px; font-size: 16px; }
+
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+input {
+  background: #0d1117;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  width: 100%;
+}
+input:focus { outline: none; border-color: var(--accent); }
+
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+
+/* Scoped deliberately: a bare .row also matched <tr className="row"> in the results table and
+   turned every row into a flex container, which silently detaches it from the column grid. */
+.panel form.inline-row { display: flex; gap: 8px; }
+.panel form.inline-row button { flex: 0 0 auto; }
+
+.watchlist { list-style: none; margin: 12px 0 0; padding: 0; }
+.watchlist li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.watchlist .ticker { font-weight: 600; font-variant-numeric: tabular-nums; }
+.watchlist .earnings { width: 135px; font-size: 12px; padding: 3px 6px; }
+
+.strategies { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.check input { width: auto; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+
+.provider { margin: 0; }
+
+.results-pane { min-width: 0; }
+
+/* The table is wider than most screens. Scroll it inside its own pane rather than letting the
+   whole page scroll sideways, which would drag the watchlist off with it. */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+
+.summary { display: flex; gap: 20px; flex-wrap: wrap; align-items: baseline; margin-bottom: 12px; font-size: 13px; }
+
+table.results { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.results thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #0f1216;
+}
+table.results th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+table.results th.num { text-align: right; }
+table.results th:first-child, table.results td:first-child { text-align: left; }
+table.results td { padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+
+tr.row { cursor: pointer; }
+tr.row:hover { background: #1b2027; }
+tr.row.open { background: #1b2027; }
+tr.row.earnings td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
+
+.toggle { color: var(--muted); display: inline-block; width: 14px; margin-right: 6px; }
+.flag {
+  display: inline-block;
+  margin-left: 6px;
+  background: var(--warn);
+  color: #1a1204;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.detail-row td { padding: 0; background: #11151b; }
+
+/* Pinned to the left edge of the scroll container: expanding a row should put the detail where
+   you are already looking, not somewhere off to the right past column 13. */
+.detail {
+  position: sticky;
+  left: 0;
+  width: min(1180px, calc(100vw - 380px));
+  padding: 16px 20px 20px 32px;
+}
+@media (max-width: 1000px) { .detail { width: calc(100vw - 48px); } }
+
+.detail-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; }
+/* Grid children default to min-width:auto, so a 10-column legs table would push the score
+   column off the side rather than shrinking. */
+.detail-grid > section { min-width: 0; overflow-x: auto; }
+@media (max-width: 1200px) { .detail-grid { grid-template-columns: 1fr; } }
+
+table.legs { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
+table.legs th { text-align: right; padding: 4px 8px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); }
+table.legs th:first-child, table.legs th:nth-child(2) { text-align: left; }
+table.legs td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #1b2027; }
+table.legs td:first-child, table.legs td:nth-child(2) { text-align: left; }
+table.legs tr.sell td:first-child { color: var(--bad); font-weight: 600; }
+table.legs tr.buy td:first-child { color: var(--good); font-weight: 600; }
+
+table.components { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.components td { padding: 4px 8px; }
+table.components tr.best td:first-child { color: var(--good); }
+table.components tr.worst td:first-child { color: var(--warn); }
+.bar { width: 90px; }
+.bar span { display: block; height: 6px; background: var(--accent); border-radius: 3px; }
+
+.facts { margin: 14px 0 0; font-size: 12px; }
+.facts div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid #1b2027; }
+.facts dt { color: var(--muted); margin: 0; }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }

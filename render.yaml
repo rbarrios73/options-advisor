@@ -1,0 +1,52 @@
+# Render blueprint. Point Render at this repo and it reads this file instead of asking you to
+# fill in a form: https://render.com/docs/blueprint-spec
+#
+# One web service. The build compiles the React app; the Node process serves both that and the
+# API on the port Render assigns, so there is nothing to wire together and no CORS to configure.
+
+services:
+  - type: web
+    name: options-advisor
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+
+    # Exempt from the password gate, deliberately: Render's checker cannot supply credentials,
+    # and a health check that always 401s reads as a dead service.
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Start on synthetic chains so the first deploy is green before any token exists.
+      # Switch to "tradier" in the Render dashboard once TRADIER_TOKEN is set.
+      - key: PROVIDER
+        value: mock
+
+      - key: TRADIER_MODE
+        value: sandbox
+
+      # Left blank on purpose: a token in a git repo is a token you have to rotate. Paste it
+      # into the Render dashboard, where it is stored as a secret.
+      - key: TRADIER_TOKEN
+        sync: false
+
+      # The password gate. Render generates a random password on first deploy — read it under
+      # Environment in the dashboard. Without this the URL is open to anyone who finds it.
+      - key: APP_USER
+        value: admin
+      - key: APP_PASSWORD
+        generateValue: true
+
+# Note on the free plan: no persistent disk, so server/data/state.json is wiped on every deploy
+# and every cold start, and your watchlist reverts to SPY/QQQ/AAPL. To keep it, move to a paid
+# instance and add:
+#
+#     disk:
+#       name: data
+#       mountPath: /var/data
+#       sizeGB: 1
+#
+# with DATA_FILE=/var/data/state.json in envVars.

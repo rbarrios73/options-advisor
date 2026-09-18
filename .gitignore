@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.log
+
+# The saved watchlist and filters are yours, not the project's.
+server/data/*
+!server/data/.gitkeep
