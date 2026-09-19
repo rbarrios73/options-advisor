@@ -9,6 +9,34 @@ import { generateCandidates } from './domain/strategies.js';
 import { scoreCandidate, rank } from './domain/score.js';
 import { daysBetween } from './domain/math.js';
 
+/**
+ * The expiries worth spending a chain request on: inside the DTE window, and — when the window
+ * holds more than maxExpirations — the ones nearest targetDte, returned in date order.
+ *
+ * Exported so it can be tested on its own. The alternative, taking the first N in the window,
+ * would pin every scan to the shortest expiries, which is where a credit spread's gamma risk
+ * lives and where the scoring least wants to be.
+ */
+export function selectExpirations(expirations, filters, asOf) {
+  const inWindow = expirations.filter((e) => {
+    const dte = daysBetween(asOf, e);
+    return dte >= filters.minDte && dte <= filters.maxDte;
+  });
+
+  const cap = filters.maxExpirations;
+  if (!(cap > 0) || inWindow.length <= cap) return inWindow;
+
+  const target = filters.targetDte ?? (filters.minDte + filters.maxDte) / 2;
+
+  return [...inWindow]
+    .sort(
+      (a, b) =>
+        Math.abs(daysBetween(asOf, a) - target) - Math.abs(daysBetween(asOf, b) - target),
+    )
+    .slice(0, cap)
+    .sort();
+}
+
 export function createScanner({ provider, cacheTtlMs = 300_000 }) {
   const cache = new Map();
 
@@ -28,10 +56,7 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
 
     const expirations = await cached(`exp:${symbol}`, () => provider.getExpirations(symbol));
 
-    const inRange = expirations.filter((e) => {
-      const dte = daysBetween(asOf, e);
-      return dte >= filters.minDte && dte <= filters.maxDte;
-    });
+    const inRange = selectExpirations(expirations, filters, asOf);
 
     const candidates = [];
     for (const expiration of inRange) {

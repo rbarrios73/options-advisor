@@ -16,6 +16,17 @@ const UNIVERSE = {
   TSLA: { spot: 412.8, baseIv: 0.55 },
   AMD: { spot: 168.2, baseIv: 0.44 },
   MSFT: { spot: 512.9, baseIv: 0.21 },
+
+  // The sector and asset-class ETFs on the default watchlist, so a mock run exercises the same
+  // list the app ships with rather than reporting half of it as missing. The vols are plausible
+  // relative orderings — gold and bonds quieter than equities, energy noisier — not forecasts.
+  XLF: { spot: 52.8, baseIv: 0.19 },
+  XLE: { spot: 91.4, baseIv: 0.25 },
+  XLV: { spot: 148.3, baseIv: 0.16 },
+  GLD: { spot: 246.7, baseIv: 0.15 },
+  TLT: { spot: 88.9, baseIv: 0.14 },
+  EEM: { spot: 47.2, baseIv: 0.2 },
+  XLY: { spot: 224.6, baseIv: 0.21 },
 };
 
 export function createMockProvider({ today = new Date() } = {}) {

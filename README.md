@@ -79,8 +79,8 @@ Four things about the free plan that will otherwise surprise you:
 - **It sleeps.** No traffic for 15 minutes and the instance shuts down; the next visit waits
   ~50 seconds for a cold start. The first scan after that is slow, then it is not.
 - **The disk is ephemeral.** `server/data/state.json` is wiped on every deploy and every cold
-  start, so your watchlist reverts to SPY/QQQ/AAPL. Keeping it means a paid instance with a
-  disk — `render.yaml` has the four lines, commented, at the bottom.
+  start, so your watchlist reverts to the default list below. Keeping your edits means a paid
+  instance with a disk — `render.yaml` has the four lines, commented, at the bottom.
 - **The password matters.** A public URL is public. Without `APP_PASSWORD` set, anyone who finds
   it can run scans against your Tradier quota. Basic auth is a low bar, but it is a bar.
 - **Tradier's sandbox is rate-limited** and shared across everything using your token. The
@@ -115,6 +115,34 @@ their weights, and the facts the arithmetic came from.
 | `minReturnOnRisk` | Credit ÷ max loss. Under ~0.15 you are not being paid for the tail. |
 | `minLiquidity` | Composite of quote width, open interest and volume. On a 4-leg condor you pay the spread four times. |
 | `minDte` / `maxDte` | The scoring prefers ~35 days; the window is yours. |
+| `maxExpirations` | How many expiries to pull per symbol. **This is the cost knob**: a scan is roughly `symbols × maxExpirations` provider requests. SPY lists an expiry nearly every weekday, so an uncapped 7–60 day window is ~40 chain calls for one symbol. |
+| `targetDte` | Which expiries survive the cap — those nearest this, not the nearest ones. Short expiries are where a credit spread's gamma risk lives. |
+
+## The default watchlist
+
+Ten names, diversified by what actually drives them, and all with chains deep enough that a
+four-legged position is fillable — on a condor you pay the bid/ask four times, so an illiquid
+underlying quietly costs more than a correlated one.
+
+| | |
+| --- | --- |
+| SPY, IWM | US large cap and small cap |
+| XLF, XLE, XLV, XLY | Financials, energy, healthcare, consumer discretionary |
+| GLD, TLT | Gold and long Treasuries — the two that tend to move when equities fall |
+| EEM | Emerging markets: non-US, dollar-sensitive |
+| NVDA | The one single name, for premium the quiet ETFs cannot pay |
+
+Nine are ETFs, which have no earnings date to gap over — and since the earnings field is entered
+by hand, every single name is one more thing you have to remember.
+
+This list lives in `DEFAULT_STATE` in `server/src/store.js`, not just in the saved file. On a host
+with an ephemeral disk the saved file is wiped on every cold start, so the default is what you
+actually get back.
+
+A note on high-priced underlyings: a $400 stock with 10-point strike spacing produces nothing at
+the default `maxWidth` of 10, because the narrowest available spread is already at the limit.
+TSLA was in an earlier draft of this list for exactly that reason and was cut. If you want one,
+raise `maxWidth` — and accept the larger max loss per contract that comes with it.
 
 Set an **earnings date** on a watchlist entry and any expiry after it is flagged. No free feed
 gives a dependable earnings date, so this is entered by hand — an earnings print inside the life
@@ -131,7 +159,7 @@ server/
     scan.js     orchestration + caching
     auth.js     optional basic auth, for when this is public
     index.js    Express API, and the built UI in production
-  test/         27 tests, no network needed
+  test/         30 tests, no network needed
 web/
   src/          React UI (Vite)
 ```

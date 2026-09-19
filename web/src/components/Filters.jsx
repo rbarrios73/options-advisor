@@ -10,6 +10,10 @@ const NUMERIC = [
   { key: 'minReturnOnRisk', label: 'Min return on risk', step: 0.05 },
   { key: 'minLiquidity', label: 'Min liquidity score', step: 0.05 },
   { key: 'maxLoss', label: 'Max loss per contract ($)', step: 50 },
+  // Raising this multiplies the number of chain requests per scan by the same factor, which is
+  // the quickest way to a provider rate limit. Hence the hint below the grid.
+  { key: 'maxExpirations', label: 'Expiries per symbol', step: 1 },
+  { key: 'targetDte', label: 'Preferred days to expiry', step: 5 },
 ];
 
 export default function Filters({ filters, weights, onFilters, onWeights }) {
@@ -53,6 +57,12 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
           </label>
         ))}
       </div>
+
+      <p className="muted small">
+        One scan costs about <strong>symbols × expiries per symbol</strong> requests. Raising
+        &ldquo;expiries per symbol&rdquo; is the usual cause of a rate-limit error mid-scan; the
+        ones kept are those closest to your preferred days to expiry.
+      </p>
 
       <h3>Score weights</h3>
       <p className="muted small">

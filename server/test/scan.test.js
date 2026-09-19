@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createMockProvider } from '../src/providers/mock.js';
-import { createScanner } from '../src/scan.js';
+import { createScanner, selectExpirations } from '../src/scan.js';
 import { DEFAULT_FILTERS } from '../src/domain/strategies.js';
 import { DEFAULT_WEIGHTS } from '../src/domain/score.js';
+import { daysBetween } from '../src/domain/math.js';
 
 const TODAY = new Date('2026-09-18T00:00:00Z');
 const asOf = '2026-09-18';
@@ -145,4 +146,51 @@ test('credit structures never report a max loss smaller than the credit is worth
       `${c.id}: width ${c.width} vs ${c.maxProfit} + ${c.maxLoss}`,
     );
   }
+});
+
+// --- expiry selection -------------------------------------------------------------------
+//
+// This is the knob that decides how many provider requests a scan costs, so it is worth pinning
+// precisely. SPY-like symbols list an expiry nearly every weekday; without a cap, a ten-symbol
+// watchlist is hundreds of chain calls and a guaranteed 429.
+
+const dailyExpiries = (from, days) => {
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(from);
+    d.setUTCDate(d.getUTCDate() + i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+};
+
+test('expiry selection caps the request count and prefers the target DTE', () => {
+  const every = dailyExpiries(TODAY, 90); // 90 candidate expiries, as SPY roughly has
+  const filters = { ...DEFAULT_FILTERS, minDte: 7, maxDte: 60, maxExpirations: 4, targetDte: 35 };
+
+  const picked = selectExpirations(every, filters, asOf);
+
+  assert.equal(picked.length, 4, 'must not exceed maxExpirations');
+
+  const dtes = picked.map((e) => daysBetween(asOf, e));
+  assert.deepEqual(dtes, [33, 34, 35, 36], 'should cluster on targetDte, not on the near expiries');
+  assert.deepEqual([...picked].sort(), picked, 'returned in date order');
+});
+
+test('expiry selection never returns anything outside the DTE window', () => {
+  const every = dailyExpiries(TODAY, 120);
+  const filters = { ...DEFAULT_FILTERS, minDte: 20, maxDte: 30, maxExpirations: 50, targetDte: 25 };
+
+  for (const e of selectExpirations(every, filters, asOf)) {
+    const dte = daysBetween(asOf, e);
+    assert.ok(dte >= 20 && dte <= 30, `${e} is ${dte} days out, outside 20-30`);
+  }
+});
+
+test('an uncapped or small window is passed through untouched', () => {
+  const few = dailyExpiries(TODAY, 40).filter((_, i) => i % 7 === 0);
+  const window = { ...DEFAULT_FILTERS, minDte: 0, maxDte: 365 };
+
+  assert.equal(selectExpirations(few, { ...window, maxExpirations: 0 }, asOf).length, few.length);
+  assert.equal(selectExpirations(few, { ...window, maxExpirations: 99 }, asOf).length, few.length);
 });

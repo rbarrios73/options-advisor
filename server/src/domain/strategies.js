@@ -191,4 +191,11 @@ export const DEFAULT_FILTERS = {
   maxLoss: null,
   maxLongMoneyness: 0.1,
   condorLegCap: 6,
+
+  // How many expiries to pull per symbol, and which ones. SPY and QQQ now list an expiry almost
+  // every trading day, so a 7-60 day window is ~40 of them — one chain request each. Ten symbols
+  // at 40 expiries is 400 requests in a single scan, which no provider rate limit survives.
+  // Instead take the few nearest targetDte, where the scoring prefers to be anyway.
+  maxExpirations: 4,
+  targetDte: 35,
 };
