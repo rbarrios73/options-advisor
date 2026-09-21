@@ -148,6 +148,40 @@ Set an **earnings date** on a watchlist entry and any expiry after it is flagged
 gives a dependable earnings date, so this is entered by hand — an earnings print inside the life
 of a short premium position is the most common way one goes wrong.
 
+## The Simulator
+
+The second tab. Pick a put credit spread off a real chain, then move the date and implied vol to
+see what closing it early would look like — the same idea as TradingView's options builder.
+
+- **Choose the short put by delta or by strike.** By delta, it takes the *listed* put nearest the
+  target, because a strike that does not exist cannot be traded; if the chain cannot get within
+  0.03 of what you asked for, it says so. The long put is set by width.
+- **Entry price**: bid/ask (what a marketable order gets — the screener's convention), mid, or the
+  credit you were actually filled at.
+- **The chart** draws the payoff at expiry (solid) and the modelled value on the chosen date
+  (dashed), with both strikes, the break-even, today's price and a ±1σ expected-move band. Hover,
+  or focus it and use the arrow keys, for exact values.
+- **The table** is P&L by price and date. It has rows at exactly today's price, both strikes and
+  the break-even, so "what happens at my short strike" gets an exact answer rather than the one
+  five dollars away.
+- **Open in simulator** on any put credit spread in the screener carries the legs across, and the
+  headline numbers match the screener's to the cent — the simulator runs the screener's own
+  `metrics.js` in the browser, and a test holds the two to each other.
+
+Things the model does not know, stated on the page as well:
+
+- Before expiry the values are **Black-Scholes** from each leg's own IV. They are only as good as
+  that vol; at expiry they are exact.
+- **Dividends are ignored.** A few cents on a 30–45 day SPY spread; more on a high-yield name near
+  an ex-date.
+- **Listed options are American.** A deep in-the-money short put can be assigned early. The model
+  is European and cannot show you that.
+- **Day one is negative**, and that is correct: selling at the bid and buying at the ask puts you
+  behind the model value by about the gap to mid the moment you open.
+
+The page's address describes what is on screen (`#/simulator?symbol=SPY&exp=…&delta=0.2&width=5`),
+so a setup can be bookmarked or sent to someone.
+
 ## Layout
 
 ```
@@ -155,14 +189,21 @@ render.yaml     one web service, build + start + env
 server/
   src/
     domain/     math.js · metrics.js · strategies.js · score.js    ← all the arithmetic, no I/O
+                pricing.js · simulate.js                           ← Black-Scholes and the simulator
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     auth.js     optional basic auth, for when this is public
     index.js    Express API, and the built UI in production
-  test/         30 tests, no network needed
+  test/         52 tests, no network needed
 web/
-  src/          React UI (Vite)
+  src/
+    pages/      ScreenerPage · SimulatorPage
+    components/ PayoffChart (SVG) · PnlGrid · ResultsTable · …
+    router.js   hash routing — two pages do not need a library
 ```
+
+`server/src/domain/` is imported by the browser as well as the server (Vite aliases it as
+`@domain`), which is why everything in it must stay free of Node APIs and I/O.
 
 `providers/index.js` documents the four-method interface. A different broker or vendor is one new
 file and one line.
@@ -177,3 +218,7 @@ They pin the arithmetic against worked examples — credit, max loss, break-even
 "only one side can lose" rule, probabilities that move the right way with strike, time and vol —
 and run the whole scan against the mock provider, including that a bad symbol is reported rather
 than thrown.
+
+For the simulator: Black-Scholes against textbook values, put-call parity, every greek against a
+finite difference of the price, the inverse normal against published quantiles, the expiry payoff
+at each kink, and the screener and simulator producing identical numbers for the same legs.

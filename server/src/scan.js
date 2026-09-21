@@ -72,6 +72,18 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
   return {
     clearCache: () => cache.clear(),
 
+    // Single lookups for the simulator. They go through the same cache as a scan, so opening a
+    // spread straight from a screener row costs no extra requests against the provider's limit.
+    quote: (symbol) => cached(`quote:${symbol}`, () => provider.getQuote(symbol)),
+    expirations: (symbol) => cached(`exp:${symbol}`, () => provider.getExpirations(symbol)),
+    async chain(symbol, expiration) {
+      const quote = await cached(`quote:${symbol}`, () => provider.getQuote(symbol));
+      const chain = await cached(`chain:${symbol}:${expiration}`, () =>
+        provider.getChain(symbol, expiration, quote.last),
+      );
+      return { quote, chain };
+    },
+
     async scan({ symbols, filters, weights, limit = 50, asOf = new Date().toISOString().slice(0, 10) }) {
       const all = [];
       const perSymbol = [];

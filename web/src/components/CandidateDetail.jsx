@@ -1,4 +1,5 @@
 import { COMPONENT_LABELS, money, price, pct, signed } from '../format.js';
+import { hrefFor } from '../router.js';
 
 /**
  * The expanded row: every input the score was computed from, and the legs at the quotes they were
@@ -51,6 +52,20 @@ export default function CandidateDetail({ candidate }) {
             been worth {price(c.slippageToMid)} more per contract — that gap is what you give up by
             taking a marketable order, and it is real money on a 4-leg condor.
           </p>
+
+          {c.kind === 'put_credit_spread' && (
+            <a
+              className="button"
+              href={hrefFor('simulator', {
+                symbol: c.symbol,
+                exp: c.expiration,
+                short: c.legs.find((l) => l.action === 'sell')?.strike,
+                long: c.legs.find((l) => l.action === 'buy')?.strike,
+              })}
+            >
+              Open in simulator →
+            </a>
+          )}
         </section>
 
         <section>

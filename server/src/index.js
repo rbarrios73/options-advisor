@@ -9,8 +9,9 @@ import { basicAuth } from './auth.js';
 import { createProvider } from './providers/index.js';
 import { createStore } from './store.js';
 import { createScanner } from './scan.js';
-import { DEFAULT_FILTERS, STRATEGIES } from './domain/strategies.js';
+import { DEFAULT_FILTERS, STRATEGIES, atmImpliedVol } from './domain/strategies.js';
 import { DEFAULT_WEIGHTS } from './domain/score.js';
+import { daysBetween } from './domain/math.js';
 
 const app = express();
 
@@ -104,6 +105,82 @@ app.post(
     });
 
     res.json(annotateEarnings(result, state.watchlist));
+  }),
+);
+
+// --- simulator --------------------------------------------------------------------------------
+//
+// The simulator does all its arithmetic in the browser (see domain/simulate.js), so the server's
+// only job is to hand it a quote, the expiries, and one expiry's chain.
+
+const SYMBOL = /^[A-Z.]{1,6}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const today = () => new Date().toISOString().slice(0, 10);
+
+function symbolParam(req, res) {
+  const symbol = String(req.query.symbol ?? '').trim().toUpperCase();
+  if (!SYMBOL.test(symbol)) {
+    res.status(400).json({ error: 'symbol must be 1–6 letters, like SPY or BRK.B' });
+    return null;
+  }
+  return symbol;
+}
+
+app.get(
+  '/api/expirations',
+  wrap(async (req, res) => {
+    const symbol = symbolParam(req, res);
+    if (!symbol) return;
+
+    const asOf = today();
+    const [quote, expirations] = await Promise.all([
+      scanner.quote(symbol),
+      scanner.expirations(symbol),
+    ]);
+
+    res.json({
+      symbol,
+      spot: quote.last,
+      description: quote.description,
+      asOf,
+      expirations: expirations
+        .map((date) => ({ date, dte: daysBetween(asOf, date) }))
+        .filter((e) => e.dte >= 0),
+    });
+  }),
+);
+
+app.get(
+  '/api/chain',
+  wrap(async (req, res) => {
+    const symbol = symbolParam(req, res);
+    if (!symbol) return;
+
+    const expiration = String(req.query.expiration ?? '');
+    if (!ISO_DATE.test(expiration)) {
+      res.status(400).json({ error: 'expiration must be a date, YYYY-MM-DD' });
+      return;
+    }
+
+    const { quote, chain } = await scanner.chain(symbol, expiration);
+    const spot = quote.last;
+    const asOf = today();
+
+    // Puts only: the simulator builds put credit spreads, and a full chain on SPY is several
+    // hundred strikes per side — no reason to ship the half that is never read.
+    const puts = chain.options.filter((o) => o.type === 'put').sort((a, b) => a.strike - b.strike);
+
+    res.json({
+      symbol,
+      spot,
+      description: quote.description,
+      expiration,
+      asOf,
+      dte: daysBetween(asOf, expiration),
+      // Taken from both sides, as the screener does, so the probabilities agree between pages.
+      atmIv: atmImpliedVol(chain.options, spot),
+      options: puts,
+    });
   }),
 );
 

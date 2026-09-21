@@ -21,6 +21,14 @@ export const api = {
       body: JSON.stringify({ filters, weights }),
     }).then(json),
 
+  expirations: (symbol) =>
+    fetch(`/api/expirations?symbol=${encodeURIComponent(symbol)}`).then(json),
+
+  chain: (symbol, expiration) =>
+    fetch(
+      `/api/chain?symbol=${encodeURIComponent(symbol)}&expiration=${encodeURIComponent(expiration)}`,
+    ).then(json),
+
   scan: (body) =>
     fetch('/api/scan', {
       method: 'POST',
