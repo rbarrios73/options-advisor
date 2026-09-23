@@ -74,13 +74,17 @@ reads it rather than asking you to fill in a form.
    — dashboard → your service → **Environment** → `APP_PASSWORD`.
 5. To switch to real chains, set `PROVIDER=tradier` in that same Environment tab and redeploy.
 
+For more than one person, see **Accounts** below: set `DATABASE_URL` and the shared password is
+replaced by a sign-in screen, with a separate watchlist for each account.
+
 Four things about the free plan that will otherwise surprise you:
 
 - **It sleeps.** No traffic for 15 minutes and the instance shuts down; the next visit waits
   ~50 seconds for a cold start. The first scan after that is slow, then it is not.
 - **The disk is ephemeral.** `server/data/state.json` is wiped on every deploy and every cold
-  start, so your watchlist reverts to the default list below. Keeping your edits means a paid
-  instance with a disk — `render.yaml` has the four lines, commented, at the bottom.
+  start, so your watchlist reverts to the default list below. Setting `DATABASE_URL` fixes this
+  as a side effect, since everything then lives in Postgres; keeping the file instead means a
+  paid instance with a disk — `render.yaml` has the four lines, commented, at the bottom.
 - **The password matters.** A public URL is public. Without `APP_PASSWORD` set, anyone who finds
   it can run scans against your Tradier quota. Basic auth is a low bar, but it is a bar.
 - **Tradier's sandbox is rate-limited** and shared across everything using your token. The
@@ -148,6 +152,58 @@ Set an **earnings date** on a watchlist entry and any expiry after it is flagged
 gives a dependable earnings date, so this is entered by hand — an earnings print inside the life
 of a short premium position is the most common way one goes wrong.
 
+## Accounts
+
+By default this is a single-user app: one shared password (`APP_PASSWORD`), settings in a JSON
+file. Set **`DATABASE_URL`** and it becomes multi-user — everyone signs in with their own email
+and password, and each person gets their own watchlist, filters and saved settings.
+
+Accounts need a real database, and this is not a preference. On Render's free tier the filesystem
+is wiped on every deploy and every cold start, so file-backed logins would disappear within hours;
+Render's own free Postgres is deleted 30 days after it is created, taking every account with it.
+**Neon** and **Supabase** both have free Postgres plans that do not expire, and either works here.
+
+### Setting it up
+
+1. Create a free Postgres at <https://neon.tech> or <https://supabase.com> and copy the connection
+   string (it looks like `postgresql://user:pass@host/db?sslmode=require`).
+2. In Render → your service → **Environment**, set:
+   - `DATABASE_URL` — that connection string
+   - `ADMIN_EMAIL` — your email
+   - `ADMIN_PASSWORD` — Render generates one; read it in the same tab
+3. Redeploy. The tables are created on boot and your administrator account with them.
+4. Sign in, change your password on the **Account** page, then add people on **Users**.
+
+`APP_PASSWORD` is ignored once `DATABASE_URL` is set — the sign-in screen replaces it.
+
+### How it behaves
+
+- **Two roles.** Admins can add, disable and delete accounts and set passwords; members just use
+  the app. The server enforces this; hiding the Users tab is a courtesy, not a control.
+- **There is always one administrator.** The last enabled admin cannot be deleted, demoted or
+  disabled — including by themselves. Otherwise the app ends up with nobody who can administer it.
+- **Setting a password signs that account out everywhere**, which is usually the point.
+- **Disabling keeps someone's watchlist and ends their sessions immediately.** Deleting removes
+  both, and cannot be undone.
+- **No password reset email**, because this app sends no mail. An admin sets a new one and tells
+  the person. If you lock yourself out of the only admin account, set `ADMIN_RESET=true` for one
+  deploy, then turn it off.
+- **One market-data connection, shared.** Everybody's scans come out of the same Tradier rate
+  limit, and the chain cache is shared across accounts — which makes a second user cheap.
+
+### How the credentials are stored
+
+Passwords are hashed with **scrypt** (a memory-hard KDF from `node:crypto` — no native module to
+fail to build), each with its own salt, and the cost parameters are stored with each hash so they
+can be raised later without invalidating old ones. Session tokens are random, and the database
+stores only their **SHA-256**: a leaked backup does not hand anyone a working session. The session
+cookie is `HttpOnly` (script cannot read it), `SameSite=Lax` (another site cannot make your browser
+send it) and `Secure` in production. Sign-in attempts are rate-limited per address.
+
+That is a reasonable bar for a screener holding a broker **read** token. It is not the bar for
+something that can place orders — if this app ever gets a token that can trade, this is the part
+to revisit first.
+
 ## The Simulator
 
 The second tab. Pick a put credit spread off a real chain, then move the date and implied vol to
@@ -192,12 +248,15 @@ server/
                 pricing.js · simulate.js                           ← Black-Scholes and the simulator
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
-    auth.js     optional basic auth, for when this is public
-    index.js    Express API, and the built UI in production
-  test/         52 tests, no network needed
+    auth.js     sign-in: basic auth (single user) or session cookies (accounts)
+    users.js    accounts, scrypt passwords, sessions
+    db.js       Postgres pool + schema
+    app.js      the Express app, as a factory so the tests can drive it
+    index.js    entry point: build it, migrate, listen
+  test/         83 tests, no network and no database needed
 web/
   src/
-    pages/      ScreenerPage · SimulatorPage
+    pages/      ScreenerPage · SimulatorPage · LoginPage · UsersPage · AccountPage
     components/ PayoffChart (SVG) · PnlGrid · ResultsTable · …
     router.js   hash routing — two pages do not need a library
 ```
@@ -222,3 +281,9 @@ than thrown.
 For the simulator: Black-Scholes against textbook values, put-call parity, every greek against a
 finite difference of the price, the inverse normal against published quantiles, the expiry payoff
 at each kink, and the screener and simulator producing identical numbers for the same legs.
+
+For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
+real ones rather than a stand-in that would agree with whatever the code does. They cover password
+hashing, session expiry and revocation, the last-administrator rule, and — over real HTTP against
+the real routes — that every data route needs a session, that members cannot reach the admin
+routes, and that one account cannot see another's watchlist.

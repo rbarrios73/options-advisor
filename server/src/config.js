@@ -32,10 +32,25 @@ export const config = {
   // service rather than two. Empty in development, where Vite serves it and proxies /api here.
   webDist: process.env.WEB_DIST ?? join(here, '..', '..', 'web', 'dist'),
 
-  // Optional HTTP basic auth. Unset means the app is open to anyone with the URL — fine on
-  // localhost, not fine on a public host, where strangers would be spending your Tradier quota.
+  // Optional HTTP basic auth, used only when there is no database. Unset means the app is open
+  // to anyone with the URL — fine on localhost, not fine on a public host, where strangers would
+  // be spending your Tradier quota.
   authUser: process.env.APP_USER ?? '',
   authPassword: process.env.APP_PASSWORD ?? '',
+
+  // Set DATABASE_URL and the app switches from "one shared password, settings in a file" to
+  // "accounts, each with their own watchlist". See db.js.
+  databaseUrl: process.env.DATABASE_URL ?? '',
+  pgSsl: process.env.PGSSL ?? '', // 'require' | 'disable' | '' (decide from the host)
+
+  sessionTtlDays: Number(process.env.SESSION_TTL_DAYS ?? 30),
+
+  // The first administrator. Created on boot if that address has no account yet; an existing
+  // account is left alone unless ADMIN_RESET=true, so a redeploy does not silently reset a
+  // password you have since changed.
+  adminEmail: process.env.ADMIN_EMAIL ?? '',
+  adminPassword: process.env.ADMIN_PASSWORD ?? '',
+  adminReset: process.env.ADMIN_RESET === 'true',
 
   riskFreeRate: Number(process.env.RISK_FREE_RATE ?? 0.04),
 };

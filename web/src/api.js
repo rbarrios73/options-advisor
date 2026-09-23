@@ -4,7 +4,26 @@ const json = async (response) => {
   return body;
 };
 
+const send = (path, method, body) =>
+  fetch(path, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  }).then(json);
+
 export const api = {
+  // Who is signed in. Always answers — "nobody" is a valid answer and is how the app knows to
+  // show the sign-in screen rather than an error.
+  me: () => fetch('/api/me').then(json),
+  login: (email, password) => send('/api/login', 'POST', { email, password }),
+  logout: () => send('/api/logout', 'POST'),
+  changePassword: (currentPassword, newPassword) => send('/api/password', 'POST', { currentPassword, newPassword }),
+
+  listUsers: () => fetch('/api/users').then(json),
+  createUser: (user) => send('/api/users', 'POST', user),
+  updateUser: (id, changes) => send(`/api/users/${encodeURIComponent(id)}`, 'PATCH', changes),
+  deleteUser: (id) => fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json),
+
   settings: () => fetch('/api/settings').then(json),
 
   saveWatchlist: (watchlist) =>

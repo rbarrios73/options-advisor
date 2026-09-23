@@ -9,7 +9,17 @@ import { useEffect, useState } from 'react';
 export const PAGES = {
   screener: { label: 'Screener' },
   simulator: { label: 'Simulator' },
+  users: { label: 'Users', adminOnly: true },
+  account: { label: 'Account', accountsOnly: true },
 };
+
+/** The pages this person can actually open, in nav order. */
+export function pagesFor({ accounts, user }) {
+  return Object.entries(PAGES).filter(
+    ([, page]) =>
+      (!page.adminOnly || user?.role === 'admin') && (!page.accountsOnly || accounts),
+  );
+}
 
 export function parseHash(hash = window.location.hash) {
   const [path, query = ''] = hash.replace(/^#\/?/, '').split('?');

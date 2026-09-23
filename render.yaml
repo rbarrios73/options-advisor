@@ -17,6 +17,9 @@ services:
     healthCheckPath: /api/health
 
     envVars:
+      # Render applies this during the build too, and npm reads it: with NODE_ENV=production,
+      # `npm install` silently skips devDependencies — which is where Vite lives. That is why
+      # the root build script installs the web workspace with --include=dev.
       - key: NODE_ENV
         value: production
 
@@ -33,16 +36,37 @@ services:
       - key: TRADIER_TOKEN
         sync: false
 
-      # The password gate. Render generates a random password on first deploy — read it under
-      # Environment in the dashboard. Without this the URL is open to anyone who finds it.
+      # --- accounts ---
+      #
+      # Leave DATABASE_URL blank and the app is single-user behind APP_PASSWORD below. Paste a
+      # Postgres connection string in the dashboard and it becomes multi-user: everyone signs in
+      # and keeps their own watchlist.
+      #
+      # Not a Render Postgres unless you intend to pay: the free one is deleted 30 days after
+      # creation, and it would take every account with it. Neon and Supabase have free plans
+      # that do not expire.
+      - key: DATABASE_URL
+        sync: false
+
+      # The first administrator — only used when DATABASE_URL is set. Render generates the
+      # password on first deploy; read it under Environment in the dashboard, sign in, then
+      # change it on the Account page.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        generateValue: true
+
+      # The single-user password gate, used only while DATABASE_URL is empty. Render generates
+      # it on first deploy — read it under Environment. Without it the URL is open to anyone.
       - key: APP_USER
         value: admin
       - key: APP_PASSWORD
         generateValue: true
 
-# Note on the free plan: no persistent disk, so server/data/state.json is wiped on every deploy
-# and every cold start, and your watchlist reverts to SPY/QQQ/AAPL. To keep it, move to a paid
-# instance and add:
+# Note on the free plan: no persistent disk, so in single-user mode server/data/state.json is
+# wiped on every deploy and every cold start and the watchlist reverts to its defaults. With
+# DATABASE_URL set this does not apply — everything lives in Postgres. To keep the file instead,
+# move to a paid instance and add:
 #
 #     disk:
 #       name: data

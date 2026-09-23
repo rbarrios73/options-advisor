@@ -36,20 +36,29 @@ const DEFAULT_STATE = {
   weights: DEFAULT_WEIGHTS,
 };
 
-export function createStore(file) {
+/** Fills in anything a stored blob is missing, so an old row or file never breaks a scan. */
+export function withDefaults(stored) {
+  return {
+    ...DEFAULT_STATE,
+    ...(stored ?? {}),
+    filters: { ...DEFAULT_FILTERS, ...(stored?.filters ?? {}) },
+    weights: { ...DEFAULT_WEIGHTS, ...(stored?.weights ?? {}) },
+  };
+}
+
+/**
+ * Settings in a JSON file — the single-user mode, used when there is no DATABASE_URL.
+ *
+ * Every method takes a userId for interface compatibility with the database store and ignores
+ * it: there is exactly one user here, and that is the whole point of this mode.
+ */
+export function createFileStore(file) {
   let cache = null;
 
   async function read() {
     if (cache) return cache;
     try {
-      cache = JSON.parse(await readFile(file, 'utf8'));
-      // Merge in any keys added since the file was written, so an old file never breaks a scan.
-      cache = {
-        ...DEFAULT_STATE,
-        ...cache,
-        filters: { ...DEFAULT_FILTERS, ...(cache.filters ?? {}) },
-        weights: { ...DEFAULT_WEIGHTS, ...(cache.weights ?? {}) },
-      };
+      cache = withDefaults(JSON.parse(await readFile(file, 'utf8')));
     } catch {
       cache = structuredClone(DEFAULT_STATE);
     }
@@ -65,13 +74,45 @@ export function createStore(file) {
 
   return {
     read,
-    async update(patch) {
+    async update(_userId, patch) {
       const current = await read();
       return write({ ...current, ...patch });
     },
-    async setWatchlist(watchlist) {
+    async setWatchlist(_userId, watchlist) {
       const current = await read();
       return write({ ...current, watchlist });
+    },
+  };
+}
+
+/**
+ * Settings in Postgres, one row per user — the accounts mode.
+ *
+ * A user with no row yet reads the defaults rather than an empty screen, and the row is written
+ * the first time they change anything. New accounts therefore start with the default watchlist.
+ */
+export function createDbStore(db) {
+  async function read(userId) {
+    const { rows } = await db.query(`SELECT data FROM settings WHERE user_id = $1`, [userId]);
+    return withDefaults(rows[0]?.data);
+  }
+
+  async function write(userId, next) {
+    await db.query(
+      `INSERT INTO settings (user_id, data) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET data = $2, updated_at = now()`,
+      [userId, JSON.stringify(next)],
+    );
+    return next;
+  }
+
+  return {
+    read,
+    async update(userId, patch) {
+      return write(userId, { ...(await read(userId)), ...patch });
+    },
+    async setWatchlist(userId, watchlist) {
+      return write(userId, { ...(await read(userId)), watchlist });
     },
   };
 }

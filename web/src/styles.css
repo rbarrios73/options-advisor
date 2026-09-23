@@ -365,3 +365,47 @@ table.pnl-grid tr.spot-row th { font-weight: 600; }
 table.pnl-grid tr.spot-row td { outline: 1px solid rgba(177, 186, 196, 0.35); outline-offset: -1px; }
 
 table.legs td:first-child { white-space: nowrap; }
+
+/* ============================================================================================
+   Accounts
+   ============================================================================================ */
+
+.topbar .who { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.link-button { background: none; border: none; color: var(--accent); padding: 4px 2px; font: inherit; }
+.link-button:hover { text-decoration: underline; }
+
+.signin { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.signin-card { width: min(380px, 100%); margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.signin-card h1 { padding: 0; }
+.signin-card p { margin: 0; }
+.signin-card button { margin-top: 4px; }
+
+.stack { display: flex; flex-direction: column; gap: 12px; max-width: 360px; }
+.stack button { align-self: flex-start; }
+
+.notice {
+  border-left: 3px solid var(--good);
+  background: rgba(63, 185, 80, 0.08);
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+}
+
+.w-email { width: 230px; }
+
+table.users-table td, table.users-table th { text-align: left; }
+table.users-table td select { padding: 3px 6px; font-size: 12px; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.row-actions button { padding: 4px 9px; font-size: 12px; }
+
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.tag.warn { border-color: var(--warn); color: var(--warn); }
+
+.account-page, .users-page { max-width: 900px; }
