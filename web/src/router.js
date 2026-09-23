@@ -6,20 +6,10 @@
 
 import { useEffect, useState } from 'react';
 
-export const PAGES = {
-  screener: { label: 'Screener' },
-  simulator: { label: 'Simulator' },
-  users: { label: 'Users', adminOnly: true },
-  account: { label: 'Account', accountsOnly: true },
-};
+import { PAGES } from './pages.js';
 
-/** The pages this person can actually open, in nav order. */
-export function pagesFor({ accounts, user }) {
-  return Object.entries(PAGES).filter(
-    ([, page]) =>
-      (!page.adminOnly || user?.role === 'admin') && (!page.accountsOnly || accounts),
-  );
-}
+// The page table lives in pages.js, free of React so it can be tested on its own.
+export { PAGES, pagesFor } from './pages.js';
 
 export function parseHash(hash = window.location.hash) {
   const [path, query = ''] = hash.replace(/^#\/?/, '').split('?');
