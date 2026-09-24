@@ -93,11 +93,14 @@ export function pickPutSpread(chain, selection, { atmIv, years } = {}) {
   return { shortLeg, longLeg, note };
 }
 
-function putDelta(option, spot, years, atmIv) {
+/** A strike's delta from its own IV, for feeds that omit greeks on quiet strikes. */
+function optionDelta(type, option, spot, years, atmIv) {
   const vol = option.iv > 0 ? option.iv : atmIv;
   if (!(vol > 0) || !(years > 0)) return NaN;
-  return bsGreeks('put', spot, option.strike, years, vol).delta;
+  return bsGreeks(type, spot, option.strike, years, vol).delta;
 }
+
+const putDelta = (option, spot, years, atmIv) => optionDelta('put', option, spot, years, atmIv);
 
 function nearest(items, distance) {
   let best = null;
@@ -117,46 +120,99 @@ function nearest(items, distance) {
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * Picks a single option — the long call or long put the simulator also supports.
+ *
+ * @param {object} chain       { spot, options: [...] }
+ * @param {object} selection   { type: 'call'|'put', by: 'delta'|'strike', delta, strike }
+ */
+export function pickLongOption(chain, selection, { atmIv, years } = {}) {
+  const type = selection.type === 'call' ? 'call' : 'put';
+  const options = (chain.options ?? [])
+    .filter((o) => o.type === type && o.strike > 0)
+    .sort((a, b) => a.strike - b.strike);
+
+  if (options.length === 0) return { error: `This expiry lists no ${type}s.` };
+
+  if (selection.by === 'strike') {
+    return { legs: [buy(nearest(options, (o) => Math.abs(o.strike - selection.strike)))], note: null };
+  }
+
+  const target = Math.abs(selection.delta ?? 0.4);
+  const withDelta = options
+    .map((o) => ({ o, d: Math.abs(o.delta ?? optionDelta(type, o, chain.spot, years, atmIv)) }))
+    .filter(({ d }) => Number.isFinite(d));
+
+  if (withDelta.length === 0) {
+    const k = strikeForDelta(type, target, chain.spot, years, atmIv);
+    return { legs: [buy(nearest(options, (o) => Math.abs(o.strike - k)))], note: null };
+  }
+
+  const best = nearest(withDelta, ({ d }) => Math.abs(d - target));
+  const note =
+    Math.abs(best.d - target) > 0.03
+      ? `No listed ${type} is near ${target.toFixed(2)} delta — the closest is ${best.d.toFixed(2)}.`
+      : null;
+
+  return { legs: [buy(best.o)], note };
+}
+
+const buy = (option) => ({ ...option, action: 'buy' });
+const sell = (option) => ({ ...option, action: 'sell' });
+
+/** +1 for a leg you sold (closing it costs money), -1 for one you bought (closing it pays). */
+const legSign = (leg) => (leg.action === 'sell' ? 1 : -1);
+
+/**
  * Freezes everything the rest of the simulation needs into one object.
  *
+ * A position is a list of legs, not a special case per strategy: the P&L, the greeks and the
+ * chart are then the same code for a two-legged spread and a single long option. Only the
+ * headline numbers at expiry — max profit, max loss, break-even — differ by kind, because that
+ * is where the shapes genuinely differ (a long call's upside has no ceiling; a spread's does).
+ *
  * @param {object} p
- *   shortLeg, longLeg   options from the chain
- *   spot                underlying price now
+ *   kind          'put_credit_spread' | 'long_call' | 'long_put'
+ *   legs          options from the chain, each with an `action` of 'buy' or 'sell'
+ *   spot          underlying price now
  *   expiration, asOf    ISO dates
- *   atmIv               the expiry's at-the-money IV — drives the probabilities, as in the screener
- *   pricing             'conservative' (sell bid, buy ask) | 'mid'
- *   creditOverride      a credit you actually got filled at, per share; wins over pricing
- *   quantity            contracts
+ *   atmIv         the expiry's at-the-money IV — drives the probabilities, as in the screener
+ *   pricing       'conservative' (sell the bid, buy the ask) | 'mid'
+ *   netOverride   the net you actually filled at, per share, signed: positive is a credit
+ *   quantity      contracts
  */
-export function createSpread({
-  shortLeg,
-  longLeg,
+export function createPosition({
+  kind,
+  legs,
   spot,
   expiration,
   asOf,
   atmIv,
   pricing = 'conservative',
-  creditOverride = null,
+  netOverride = null,
   quantity = 1,
   rate = DEFAULT_RATE,
 }) {
-  const creditConservative = (shortLeg.bid ?? 0) - (longLeg.ask ?? 0);
-  const creditMid = (mid(shortLeg.bid, shortLeg.ask) ?? 0) - (mid(longLeg.bid, longLeg.ask) ?? 0);
+  // Conservative means the price you could actually be filled at on both sides: you are hit on
+  // the bid when you sell and you pay the ask when you buy. Mid flatters every multi-leg order.
+  const netConservative = legs.reduce(
+    (sum, leg) => sum + (leg.action === 'sell' ? (leg.bid ?? 0) : -(leg.ask ?? 0)),
+    0,
+  );
+  const netMid = legs.reduce((sum, leg) => sum + legSign(leg) * (mid(leg.bid, leg.ask) ?? 0), 0);
 
-  const entryCredit =
-    creditOverride != null && Number.isFinite(creditOverride)
-      ? creditOverride
+  const net =
+    netOverride != null && Number.isFinite(netOverride)
+      ? netOverride
       : pricing === 'mid'
-        ? creditMid
-        : creditConservative;
+        ? netMid
+        : netConservative;
 
+  const priced = legs.map((leg) => ({ ...leg, iv: leg.iv > 0 ? leg.iv : atmIv }));
   const dte = Math.max(daysBetween(asOf, expiration), 0);
 
-  return {
-    type: 'put',
-    short: { ...shortLeg, iv: shortLeg.iv > 0 ? shortLeg.iv : atmIv },
-    long: { ...longLeg, iv: longLeg.iv > 0 ? longLeg.iv : atmIv },
-    width: shortLeg.strike - longLeg.strike,
+  const position = {
+    kind,
+    legs: priced,
     spot,
     expiration,
     asOf,
@@ -165,12 +221,48 @@ export function createSpread({
     rate,
     quantity: Math.max(1, Math.round(quantity || 1)),
     entry: {
-      credit: entryCredit,
-      creditConservative,
-      creditMid,
-      source: creditOverride != null ? 'override' : pricing,
+      net,
+      netConservative,
+      netMid,
+      source: netOverride != null ? 'override' : pricing,
     },
   };
+
+  // A vertical spread is read strike-by-strike often enough to be worth naming its legs.
+  if (priced.length === 2) {
+    position.short = priced.find((l) => l.action === 'sell');
+    position.long = priced.find((l) => l.action === 'buy');
+    if (position.short && position.long) {
+      position.width = Math.abs(position.short.strike - position.long.strike);
+    }
+  }
+
+  return position;
+}
+
+/** The put credit spread, kept as its own entry point because that is how the screener names it. */
+export function createSpread({ shortLeg, longLeg, ...rest }) {
+  return createPosition({ kind: 'put_credit_spread', legs: [sell(shortLeg), buy(longLeg)], ...rest });
+}
+
+export function createLongOption({ leg, type, ...rest }) {
+  return createPosition({ kind: type === 'call' ? 'long_call' : 'long_put', legs: [buy(leg)], ...rest });
+}
+
+export const isCreditStrategy = (position) => position.kind === 'put_credit_spread';
+
+/**
+ * The underlying prices where the position breaks even at expiry. One for every strategy here,
+ * but returned as a list because that is what the chart wants and what a condor would need.
+ */
+export function breakEvens(position) {
+  const { kind, legs, entry } = position;
+
+  if (kind === 'put_credit_spread') return [position.short.strike - entry.net];
+
+  const debit = -entry.net;
+  const [leg] = legs;
+  return [kind === 'long_call' ? leg.strike + debit : leg.strike - debit];
 }
 
 /**
@@ -179,17 +271,60 @@ export function createSpread({
  * Probabilities use the at-the-money IV and are measured at the break-even, exactly as the
  * screener does — see metrics.js for why the break-even and not the short strike.
  */
-export function summarize(spread) {
-  const { short, long, width, spot, atmIv, dte, quantity, entry } = spread;
-  const credit = entry.credit;
+export function summarize(position) {
+  const { spot, atmIv, dte, quantity, entry } = position;
   const m = CONTRACT_MULTIPLIER * quantity;
   const years = Math.max(dte, 0.5) / DAYS_PER_YEAR;
+  const [breakEven] = breakEvens(position);
 
+  const shape = isCreditStrategy(position)
+    ? creditSpreadShape(position, breakEven)
+    : longOptionShape(position, breakEven);
+
+  const { maxProfit, maxLoss, probProfit, probMaxProfit, probMaxLoss, warnings } = shape;
+
+  return {
+    kind: position.kind,
+    net: round(entry.net),
+    // Named for what it is on this strategy, so nothing has to read a negative "credit".
+    credit: entry.net > 0 ? round(entry.net) : null,
+    debit: entry.net < 0 ? round(-entry.net) : null,
+    netConservative: round(entry.netConservative),
+    netMid: round(entry.netMid),
+    // Always "what mid would have given you, versus what you took" — positive means mid is better.
+    slippageToMid: round(entry.netMid - entry.netConservative),
+    width: position.width == null ? null : round(position.width),
+
+    maxProfit: maxProfit === null ? null : round(maxProfit * m),
+    maxLoss: round(maxLoss * m),
+    breakEven: round(breakEven),
+    returnOnRisk: maxProfit !== null && maxLoss > 0 ? round(maxProfit / maxLoss, 4) : null,
+
+    probProfit: probProfit === null ? null : round(probProfit, 4),
+    probMaxProfit: probMaxProfit === null ? null : round(probMaxProfit, 4),
+    probMaxLoss: probMaxLoss === null ? null : round(probMaxLoss, 4),
+
+    // Two outcomes only, so it is meaningful for a spread and not for a long option, whose
+    // upside is a distribution rather than a number. Left null rather than faked — see the note
+    // on expectedValue in metrics.js.
+    expectedValue:
+      isCreditStrategy(position) && probProfit !== null && maxLoss > 0 && maxProfit !== null
+        ? round((expectedValue(probProfit, maxProfit, maxLoss) ?? 0) * quantity)
+        : null,
+
+    expectedMove: round(expectedMove(spot, atmIv, years) ?? NaN),
+    dte,
+    warnings,
+  };
+}
+
+function creditSpreadShape(position, breakEven) {
+  const { short, long, width, spot, atmIv, dte, entry } = position;
+  const years = Math.max(dte, 0.5) / DAYS_PER_YEAR;
+
+  const credit = entry.net;
   const isCredit = credit > 0;
   const maxLoss = width - credit;
-  const breakEven = short.strike - credit;
-
-  const probProfit = isCredit ? probabilityAbove(spot, breakEven, atmIv, years) : null;
 
   const warnings = [];
   if (!isCredit) {
@@ -205,25 +340,51 @@ export function summarize(spread) {
   }
 
   return {
-    width: round(width),
-    credit: round(credit),
-    creditConservative: round(entry.creditConservative),
-    creditMid: round(entry.creditMid),
-    slippageToMid: round(entry.creditMid - entry.creditConservative),
-    maxProfit: round(credit * m),
-    maxLoss: round(maxLoss * m),
-    breakEven: round(breakEven),
-    returnOnRisk: maxLoss > 0 && isCredit ? round(credit / maxLoss, 4) : null,
-    probProfit: probProfit === null ? null : round(probProfit, 4),
-    probMaxProfit: round(probabilityAbove(spot, short.strike, atmIv, years) ?? NaN, 4),
-    probMaxLoss: round(probabilityBelow(spot, long.strike, atmIv, years) ?? NaN, 4),
-    // Per contract in the screener; scaled by quantity here because this page is about a position.
-    expectedValue:
-      probProfit === null || !(maxLoss > 0)
-        ? null
-        : round((expectedValue(probProfit, credit, maxLoss) ?? 0) * quantity),
-    expectedMove: round(expectedMove(spot, atmIv, years) ?? NaN),
-    dte,
+    maxProfit: credit,
+    maxLoss,
+    probProfit: isCredit ? probabilityAbove(spot, breakEven, atmIv, years) : null,
+    probMaxProfit: probabilityAbove(spot, short.strike, atmIv, years),
+    probMaxLoss: probabilityBelow(spot, long.strike, atmIv, years),
+    warnings,
+  };
+}
+
+function longOptionShape(position, breakEven) {
+  const { kind, legs, spot, atmIv, dte, entry } = position;
+  const years = Math.max(dte, 0.5) / DAYS_PER_YEAR;
+  const [leg] = legs;
+
+  const debit = -entry.net;
+  const call = kind === 'long_call';
+
+  const warnings = [];
+  if (!(debit > 0)) {
+    warnings.push('These quotes do not price this option above zero — an empty or stale book.');
+  }
+  // The move needed to break even, stated against what the market is pricing in, because "it
+  // needs to rise 9%" means little until you know one standard deviation is 4%.
+  const move = expectedMove(spot, atmIv, years);
+  const needed = Math.abs(breakEven - spot);
+  if (move > 0 && needed > move) {
+    warnings.push(
+      `Break-even is ${(needed / move).toFixed(1)}× the expected move away. The market is not pricing ` +
+        'a move that big by expiry, which is why the option is this cheap.',
+    );
+  }
+
+  return {
+    // A long call's upside has no ceiling; a long put's is the strike going to zero.
+    maxProfit: call ? null : leg.strike - debit,
+    maxLoss: debit,
+    probProfit: call
+      ? probabilityAbove(spot, breakEven, atmIv, years)
+      : probabilityBelow(spot, breakEven, atmIv, years),
+    // "Max profit" is unbounded for a call, so the honest companion number is the chance of
+    // finishing worthless — which is also the chance of losing the whole debit.
+    probMaxProfit: null,
+    probMaxLoss: call
+      ? probabilityBelow(spot, leg.strike, atmIv, years)
+      : probabilityAbove(spot, leg.strike, atmIv, years),
     warnings,
   };
 }
@@ -233,24 +394,25 @@ export function summarize(spread) {
  * `daysForward` days with every leg's IV moved by `ivShift` (in vol points: +5 means 20% → 25%).
  *
  * Before expiry this is a Black-Scholes value, so it is only as good as the vol assumption. At
- * expiry it is exact: each put is worth its intrinsic value.
+ * expiry it is exact: each option is worth its intrinsic value.
  */
-export function pnlAt(spread, price, daysForward = 0, ivShift = 0) {
-  const { short, long, dte, rate, quantity, entry } = spread;
-  const daysLeft = Math.max(dte - daysForward, 0);
-  const years = daysLeft / DAYS_PER_YEAR;
+export function pnlAt(position, price, daysForward = 0, ivShift = 0) {
+  const { legs, dte, rate, quantity, entry } = position;
+  const years = Math.max(dte - daysForward, 0) / DAYS_PER_YEAR;
   const shift = ivShift / 100;
 
-  const shortValue = bsPrice('put', price, short.strike, years, Math.max(short.iv + shift, MIN_VOL), rate);
-  const longValue = bsPrice('put', price, long.strike, years, Math.max(long.iv + shift, MIN_VOL), rate);
+  const costToClose = legs.reduce(
+    (sum, leg) =>
+      sum + legSign(leg) * bsPrice(leg.type, price, leg.strike, years, Math.max(leg.iv + shift, MIN_VOL), rate),
+    0,
+  );
 
-  const costToClose = shortValue - longValue;
-  return (entry.credit - costToClose) * CONTRACT_MULTIPLIER * quantity;
+  return (entry.net - costToClose) * CONTRACT_MULTIPLIER * quantity;
 }
 
 /** The expiry payoff alone — no model, just intrinsic value. */
-export function pnlAtExpiry(spread, price) {
-  return pnlAt(spread, price, spread.dte, 0);
+export function pnlAtExpiry(position, price) {
+  return pnlAt(position, price, position.dte, 0);
 }
 
 /**
@@ -260,21 +422,26 @@ export function pnlAtExpiry(spread, price) {
  *   theta  — dollars per calendar day
  *   vega   — dollars per vol point
  */
-export function positionGreeks(spread, price, daysForward = 0, ivShift = 0) {
-  const { short, long, dte, rate, quantity } = spread;
+export function positionGreeks(position, price, daysForward = 0, ivShift = 0) {
+  const { legs, dte, rate, quantity } = position;
   const years = Math.max(dte - daysForward, 0) / DAYS_PER_YEAR;
   const shift = ivShift / 100;
-
-  const s = bsGreeks('put', price, short.strike, years, Math.max(short.iv + shift, MIN_VOL), rate);
-  const l = bsGreeks('put', price, long.strike, years, Math.max(long.iv + shift, MIN_VOL), rate);
   const m = CONTRACT_MULTIPLIER * quantity;
 
-  // Short the first leg, long the second.
+  const total = { delta: 0, gamma: 0, theta: 0, vega: 0 };
+
+  for (const leg of legs) {
+    const g = bsGreeks(leg.type, price, leg.strike, years, Math.max(leg.iv + shift, MIN_VOL), rate);
+    // -legSign: a bought leg adds its greeks to the position, a sold leg subtracts them.
+    const sign = -legSign(leg);
+    for (const key of Object.keys(total)) total[key] += sign * g[key];
+  }
+
   return {
-    delta: round((l.delta - s.delta) * m, 2),
-    gamma: round((l.gamma - s.gamma) * m, 4),
-    theta: round((l.theta - s.theta) * m, 2),
-    vega: round((l.vega - s.vega) * m, 2),
+    delta: round(total.delta * m, 2),
+    gamma: round(total.gamma * m, 4),
+    theta: round(total.theta * m, 2),
+    vega: round(total.vega * m, 2),
   };
 }
 
@@ -286,12 +453,17 @@ export function positionGreeks(spread, price, daysForward = 0, ivShift = 0) {
  * The price range worth drawing: comfortably past both strikes and ±2.5 standard deviations of
  * the move to expiry, so the flat parts of the payoff are visible on both sides.
  */
-export function priceRange(spread, sigmas = 2.5) {
-  const { spot, short, long, width } = spread;
-  const move = expectedMove(spot, spread.atmIv, Math.max(spread.dte, 1) / DAYS_PER_YEAR) ?? spot * 0.1;
+export function priceRange(position, sigmas = 2.5) {
+  const { spot, legs } = position;
+  const move = expectedMove(spot, position.atmIv, Math.max(position.dte, 1) / DAYS_PER_YEAR) ?? spot * 0.1;
 
-  const lo = Math.min(long.strike - width, spot - sigmas * move);
-  const hi = Math.max(short.strike + width, spot + sigmas * move);
+  const strikes = legs.map((l) => l.strike);
+  // A margin around the strikes so the flat parts of the payoff are visible rather than clipped
+  // at the kink. On a one-legged position there is no width to borrow, so use the expected move.
+  const pad = Math.max(Math.max(...strikes) - Math.min(...strikes), move * 0.5);
+
+  const lo = Math.min(Math.min(...strikes) - pad, spot - sigmas * move);
+  const hi = Math.max(Math.max(...strikes) + pad, spot + sigmas * move);
   return [Math.max(lo, 0.01), hi];
 }
 
@@ -300,13 +472,13 @@ export function priceRange(spread, sigmas = 2.5) {
  * The strikes and the break-even are inserted exactly, so the kinks in the expiry line are drawn
  * where they are rather than wherever the sampling happens to land.
  */
-export function pnlCurve(spread, { daysForward = 0, ivShift = 0, points = 240, range } = {}) {
-  const [lo, hi] = range ?? priceRange(spread);
+export function pnlCurve(position, { daysForward = 0, ivShift = 0, points = 240, range } = {}) {
+  const [lo, hi] = range ?? priceRange(position);
   const step = (hi - lo) / (points - 1);
 
   const prices = new Set();
   for (let i = 0; i < points; i++) prices.add(round(lo + i * step, 4));
-  for (const p of [spread.short.strike, spread.long.strike, spread.short.strike - spread.entry.credit, spread.spot]) {
+  for (const p of [...position.legs.map((l) => l.strike), ...breakEvens(position), position.spot]) {
     if (p > lo && p < hi) prices.add(round(p, 4));
   }
 
@@ -314,8 +486,8 @@ export function pnlCurve(spread, { daysForward = 0, ivShift = 0, points = 240, r
     .sort((a, b) => a - b)
     .map((price) => ({
       price,
-      expiry: pnlAtExpiry(spread, price),
-      projected: pnlAt(spread, price, daysForward, ivShift),
+      expiry: pnlAtExpiry(position, price),
+      projected: pnlAt(position, price, daysForward, ivShift),
     }));
 }
 
@@ -328,9 +500,9 @@ export function pnlCurve(spread, { daysForward = 0, ivShift = 0, points = 240, r
  * that falls exactly between two rows has no honest nearest row, and "what happens at my short
  * strike" deserves an exact answer, not the one five dollars away.
  */
-export function pnlGrid(spread, { rows = 11, columns = 6, ivShift = 0, priceStep, keyLevels = true } = {}) {
-  const { spot, dte } = spread;
-  const move = expectedMove(spot, spread.atmIv, Math.max(dte, 1) / DAYS_PER_YEAR) ?? spot * 0.05;
+export function pnlGrid(position, { rows = 11, columns = 6, ivShift = 0, priceStep, keyLevels = true } = {}) {
+  const { spot, dte } = position;
+  const move = expectedMove(spot, position.atmIv, Math.max(dte, 1) / DAYS_PER_YEAR) ?? spot * 0.05;
 
   // Span ±2σ at expiry, in steps that are round numbers a trader would recognise.
   const rawStep = (4 * move) / (rows - 1);
@@ -341,12 +513,11 @@ export function pnlGrid(spread, { rows = 11, columns = 6, ivShift = 0, priceStep
   const levels = new Set();
   for (let i = half; i >= -half; i--) levels.add(round(centre + i * step, 4));
 
-  const key = {
-    spot: round(spot, 4),
-    short: round(spread.short.strike, 4),
-    breakEven: round(spread.short.strike - spread.entry.credit, 4),
-    long: round(spread.long.strike, 4),
-  };
+  const key = { spot: round(spot, 4), breakEven: round(breakEvens(position)[0], 4) };
+  for (const leg of position.legs) {
+    // "short 540" / "long 535" on a spread; just "strike" when there is only one leg.
+    key[position.legs.length > 1 ? leg.action === 'sell' ? 'short' : 'long' : 'strike'] = round(leg.strike, 4);
+  }
   if (keyLevels) for (const v of Object.values(key)) if (v > 0) levels.add(v);
 
   const prices = [...levels].sort((a, b) => b - a);
@@ -362,10 +533,10 @@ export function pnlGrid(spread, { rows = 11, columns = 6, ivShift = 0, priceStep
     columns: uniqueDays.map((d) => ({
       daysForward: d,
       daysLeft: dte - d,
-      date: addDays(spread.asOf, d),
+      date: addDays(position.asOf, d),
     })),
     // `|| 0` turns -0 into 0: rounding a tiny loss at the break-even must not print "-$0".
-    values: prices.map((price) => uniqueDays.map((d) => round(pnlAt(spread, price, d, ivShift), 0) || 0)),
+    values: prices.map((price) => uniqueDays.map((d) => round(pnlAt(position, price, d, ivShift), 0) || 0)),
   };
 }
 

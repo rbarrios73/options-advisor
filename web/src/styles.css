@@ -338,6 +338,7 @@ table.components tr.worst td:first-child { color: var(--warn); }
 .tile-value.pos { border-top-color: var(--profit); }
 .tile-value.neg { border-top-color: var(--loss); }
 .tile-label { font-size: 11px; color: var(--muted); }
+.tile-hint { display: block; font-size: 10px; opacity: 0.85; }
 
 .facts .hint { display: block; color: var(--muted); font-size: 11px; }
 .facts dt { color: var(--text-secondary); }

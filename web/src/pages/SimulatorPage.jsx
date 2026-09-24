@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 
 import {
   addDays,
+  breakEvens,
+  createLongOption,
   createSpread,
+  isCreditStrategy,
+  pickLongOption,
   pickPutSpread,
   pnlAt,
   pnlCurve,
@@ -20,16 +24,67 @@ import PnlGrid from '../components/PnlGrid.jsx';
 const TARGET_DTE = 35;
 
 /**
- * Put credit spread simulator. Pick the legs off a real chain — by delta or by strike — then move
- * the date and implied vol to see what the position would be worth before expiry.
+ * What each strategy needs from the controls, and how to describe it. Keeping the differences in
+ * one table rather than scattered through the JSX is what stops a fourth strategy turning the
+ * page into a thicket of conditionals.
+ */
+const STRATEGIES = {
+  put_credit_spread: {
+    label: 'Put credit spread',
+    side: 'put',
+    legs: 2,
+    defaultDelta: 0.2,
+    deltaRange: [0.05, 0.5],
+    strikeLabel: 'Short strike',
+    deltaLabel: 'Short put delta',
+    entryLabels: [['conservative', 'Bid/ask'], ['mid', 'Mid']],
+    blurb:
+      'Sell a put, buy a cheaper one below it for protection. Bullish and defined-risk: you keep ' +
+      'the credit if the price stays above the break-even, and the width caps what you can lose.',
+  },
+  long_call: {
+    label: 'Long call',
+    side: 'call',
+    legs: 1,
+    defaultDelta: 0.4,
+    deltaRange: [0.05, 0.85],
+    strikeLabel: 'Strike',
+    deltaLabel: 'Delta',
+    entryLabels: [['conservative', 'Ask'], ['mid', 'Mid']],
+    blurb:
+      'Buy a call. Bullish, and the most you can lose is what you paid — but time decay works ' +
+      'against you every day, and the price has to clear the break-even before any of it is profit.',
+  },
+  long_put: {
+    label: 'Long put',
+    side: 'put',
+    legs: 1,
+    defaultDelta: 0.4,
+    deltaRange: [0.05, 0.85],
+    strikeLabel: 'Strike',
+    deltaLabel: 'Delta',
+    entryLabels: [['conservative', 'Ask'], ['mid', 'Mid']],
+    blurb:
+      'Buy a put. Bearish, and the most you can lose is what you paid. The same time decay ' +
+      'applies: the price has to fall past the break-even before any of it is profit.',
+  },
+};
+
+/**
+ * The simulator. Pick a position off a real chain — by delta or by strike — then move the date and
+ * implied vol to see what it would be worth before expiry.
  *
  * Only the chain comes from the server. Everything else is computed here, in the browser, by the
  * same domain code the screener uses (imported from server/src/domain), so sliders respond
- * instantly and a spread opened from a screener row shows the screener's own numbers.
+ * instantly and a position opened from a screener row shows the screener's own numbers.
  */
 export default function SimulatorPage({ watchlist, params }) {
-  const initialShort = num(params.short);
+  const initialKind = STRATEGIES[params.kind] ? params.kind : 'put_credit_spread';
+  const initialStrike = num(params.short) ?? num(params.strike);
   const initialLong = num(params.long);
+
+  const [kind, setKind] = useState(initialKind);
+  const strategy = STRATEGIES[kind];
 
   const [symbol, setSymbol] = useState((params.symbol || watchlist[0]?.symbol || 'SPY').toUpperCase());
   const [symbolDraft, setSymbolDraft] = useState(symbol);
@@ -40,12 +95,12 @@ export default function SimulatorPage({ watchlist, params }) {
   const [loading, setLoading] = useState(0);
   const [error, setError] = useState(null);
 
-  // Leg selection.
-  const [by, setBy] = useState(initialShort ? 'strike' : 'delta');
-  const [shortDelta, setShortDelta] = useState(num(params.delta) ?? 0.2);
-  const [shortStrike, setShortStrike] = useState(initialShort);
+  // Leg selection. One delta and one strike, whichever the strategy uses them for.
+  const [by, setBy] = useState(initialStrike ? 'strike' : 'delta');
+  const [targetDelta, setTargetDelta] = useState(num(params.delta) ?? STRATEGIES[initialKind].defaultDelta);
+  const [strike, setStrike] = useState(initialStrike);
   const [width, setWidth] = useState(
-    num(params.width) ?? (initialShort && initialLong ? initialShort - initialLong : 5),
+    num(params.width) ?? (initialStrike && initialLong ? initialStrike - initialLong : 5),
   );
 
   // Position.
@@ -91,6 +146,8 @@ export default function SimulatorPage({ watchlist, params }) {
     setLoading((n) => n + 1);
     setError(null);
 
+    // Both sides of the chain come back in one request, so switching strategy is instant and
+    // costs nothing against the provider's rate limit.
     api
       .chain(symbol, expiration)
       .then((data) => !cancelled && setChain(data))
@@ -108,45 +165,61 @@ export default function SimulatorPage({ watchlist, params }) {
     if (!chain) return null;
 
     const years = Math.max(chain.dte, 0.5) / 365;
-    const picked = pickPutSpread(chain, { by, shortDelta, shortStrike, width }, { atmIv: chain.atmIv, years });
-    if (picked.error) return { error: picked.error };
-
-    const spread = createSpread({
-      ...picked,
+    const picking = { atmIv: chain.atmIv, years };
+    const common = {
       spot: chain.spot,
       expiration: chain.expiration,
       asOf: chain.asOf,
       atmIv: chain.atmIv,
       pricing,
-      creditOverride: num(fill),
       quantity,
-    });
+      // The box takes a positive number; on a debit strategy that number is what you paid, which
+      // is a negative net. Getting this sign wrong would flip the whole P&L.
+      netOverride: num(fill) == null ? null : isCreditStrategy({ kind }) ? num(fill) : -num(fill),
+    };
 
-    const d = Math.min(daysForward, spread.dte);
+    let picked;
+    let position;
+
+    if (kind === 'put_credit_spread') {
+      picked = pickPutSpread(chain, { by, shortDelta: targetDelta, shortStrike: strike, width }, picking);
+      if (picked.error) return { error: picked.error };
+      position = createSpread({ shortLeg: picked.shortLeg, longLeg: picked.longLeg, ...common });
+    } else {
+      const type = strategy.side;
+      picked = pickLongOption(chain, { type, by, delta: targetDelta, strike }, picking);
+      if (picked.error) return { error: picked.error };
+      position = createLongOption({ leg: picked.legs[0], type, ...common });
+    }
+
+    const d = Math.min(daysForward, position.dte);
 
     return {
       picked,
-      spread,
-      summary: summarize(spread),
+      position,
+      summary: summarize(position),
       daysForward: d,
-      curve: pnlCurve(spread, { daysForward: d, ivShift }),
-      greeks: positionGreeks(spread, spread.spot, d, ivShift),
-      atSpot: pnlAt(spread, spread.spot, d, ivShift),
-      grid: pnlGrid(spread, { rows: 11, columns: 6, ivShift }),
+      curve: pnlCurve(position, { daysForward: d, ivShift }),
+      greeks: positionGreeks(position, position.spot, d, ivShift),
+      atSpot: pnlAt(position, position.spot, d, ivShift),
+      grid: pnlGrid(position, { rows: 11, columns: 6, ivShift }),
     };
-  }, [chain, by, shortDelta, shortStrike, width, pricing, fill, quantity, daysForward, ivShift]);
+  }, [chain, kind, strategy, by, targetDelta, strike, width, pricing, fill, quantity, daysForward, ivShift]);
 
   // Keep the address bar describing what is on screen, so the page can be bookmarked or shared.
   useEffect(() => {
-    if (!sim?.spread) return;
-    const base = { symbol, exp: expiration, qty: quantity > 1 ? quantity : undefined };
-    replaceParams(
-      'simulator',
-      by === 'strike'
-        ? { ...base, short: sim.spread.short.strike, long: sim.spread.long.strike }
-        : { ...base, delta: shortDelta, width },
-    );
-  }, [sim, symbol, expiration, by, shortDelta, width, quantity]);
+    if (!sim?.position) return;
+    const p = sim.position;
+    const base = { kind, symbol, exp: expiration, qty: quantity > 1 ? quantity : undefined };
+
+    if (by === 'delta') {
+      replaceParams('simulator', { ...base, delta: targetDelta, width: p.width ?? undefined });
+    } else if (kind === 'put_credit_spread') {
+      replaceParams('simulator', { ...base, short: p.short.strike, long: p.long.strike });
+    } else {
+      replaceParams('simulator', { ...base, strike: p.legs[0].strike });
+    }
+  }, [sim, kind, symbol, expiration, by, targetDelta, width, quantity]);
 
   // --- controls ----------------------------------------------------------------------------
 
@@ -160,27 +233,44 @@ export default function SimulatorPage({ watchlist, params }) {
     }
   };
 
+  /**
+   * Switching strategy resets the leg choice rather than carrying it across: a 0.20-delta short
+   * put and a 0.20-delta long call are not the same trade, and a strike from the put side may not
+   * even be listed on the call side.
+   */
+  const switchStrategy = (next) => {
+    if (next === kind) return;
+    setKind(next);
+    setTargetDelta(STRATEGIES[next].defaultDelta);
+    setStrike(null);
+    setBy('delta');
+    setFill('');
+  };
+
   // Switching mode starts from the strike currently on screen, so the legs do not jump.
   const switchMode = (next) => {
-    if (next === by) return;
-    if (next === 'strike' && sim?.spread) setShortStrike(sim.spread.short.strike);
-    if (next === 'delta' && sim?.spread?.short.delta != null) {
-      setShortDelta(round2(Math.abs(sim.spread.short.delta)));
-    }
+    if (next === by || !sim?.position) return;
+    const leading = kind === 'put_credit_spread' ? sim.position.short : sim.position.legs[0];
+
+    if (next === 'strike') setStrike(leading.strike);
+    if (next === 'delta' && leading.delta != null) setTargetDelta(round2(Math.abs(leading.delta)));
     setBy(next);
   };
 
-  const putStrikes = useMemo(() => (chain?.options ?? []).map((o) => o.strike), [chain]);
+  const strikes = useMemo(
+    () => (chain?.options ?? []).filter((o) => o.type === strategy.side).map((o) => o.strike),
+    [chain, strategy.side],
+  );
 
   const widths = useMemo(() => {
-    if (!sim?.spread) return [];
-    const k = sim.spread.short.strike;
-    return putStrikes
+    if (kind !== 'put_credit_spread' || !sim?.position?.short) return [];
+    const k = sim.position.short.strike;
+    return strikes
       .filter((s) => s < k)
       .map((s) => round2(k - s))
       .sort((a, b) => a - b)
       .slice(0, 16);
-  }, [putStrikes, sim]);
+  }, [strikes, sim, kind]);
 
   const resetWhatIf = () => {
     setDaysForward(0);
@@ -190,25 +280,57 @@ export default function SimulatorPage({ watchlist, params }) {
   // --- render ------------------------------------------------------------------------------
 
   const s = sim?.summary;
-  const spread = sim?.spread;
-  const dte = spread?.dte ?? chain?.dte ?? 0;
-  const projectedDate = spread ? addDays(spread.asOf, sim.daysForward) : null;
-  const projectedLabel = spread
+  const position = sim?.position;
+  const dte = position?.dte ?? chain?.dte ?? 0;
+  const credit = Boolean(position) && isCreditStrategy(position);
+  const projectedDate = position ? addDays(position.asOf, sim.daysForward) : null;
+  const projectedLabel = position
     ? `${sim.daysForward === 0 ? 'Today' : `${shortDate(projectedDate)} · T+${sim.daysForward}`}${
         ivShift ? ` · IV ${signedNumber(ivShift, 0)}` : ''
       }`
     : '';
 
+  const levels = position
+    ? [
+        ...position.legs.map((leg, i) => ({
+          key: `leg${i}`,
+          label:
+            position.legs.length > 1 ? (leg.action === 'sell' ? 'Short' : 'Long') : leg.type === 'call' ? 'Call' : 'Put',
+          value: leg.strike,
+          kind: 'strike',
+        })),
+        ...breakEvens(position).map((value, i) => ({ key: `be${i}`, label: 'BE', value, kind: 'be' })),
+        { key: 'spot', label: 'Spot', value: position.spot, kind: 'spot' },
+      ]
+    : [];
+
   return (
     <div className="simulator">
       <p className="muted small page-intro">
-        A put credit spread on a real chain: sell a put, buy a cheaper one below it for protection.
-        Choose the short put by delta or by strike, then drag the date and IV to see what closing it
-        early would look like. Bullish — it profits if the price stays above the break-even.
+        {strategy.blurb} Choose it by delta or by strike, then drag the date and IV to see what
+        closing it early would look like.
       </p>
 
       {/* Inputs, in one row above everything they scope. */}
       <form className="controls" onSubmit={(e) => e.preventDefault()}>
+        <div className="control">
+          <span>Strategy</span>
+          <div className="segmented" role="radiogroup" aria-label="Strategy">
+            {Object.entries(STRATEGIES).map(([key, { label }]) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={kind === key}
+                className={kind === key ? 'on' : ''}
+                onClick={() => switchStrategy(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <label className="control">
           <span>Symbol</span>
           <input
@@ -240,8 +362,8 @@ export default function SimulatorPage({ watchlist, params }) {
         </label>
 
         <div className="control">
-          <span>Short put by</span>
-          <div className="segmented" role="radiogroup" aria-label="Choose the short put by">
+          <span>Choose by</span>
+          <div className="segmented" role="radiogroup" aria-label="Choose the contract by">
             {['delta', 'strike'].map((mode) => (
               <button
                 key={mode}
@@ -260,43 +382,51 @@ export default function SimulatorPage({ watchlist, params }) {
         {by === 'delta' ? (
           <label className="control">
             <span>
-              Target delta <strong>{shortDelta.toFixed(2)}</strong>
+              {strategy.deltaLabel} <strong>{targetDelta.toFixed(2)}</strong>
             </span>
             <input
               type="range"
-              min="0.05"
-              max="0.5"
+              min={strategy.deltaRange[0]}
+              max={strategy.deltaRange[1]}
               step="0.01"
-              value={shortDelta}
-              onChange={(e) => setShortDelta(Number(e.target.value))}
+              value={targetDelta}
+              onChange={(e) => setTargetDelta(Number(e.target.value))}
               className="w-range"
             />
           </label>
         ) : (
           <label className="control">
-            <span>Short strike</span>
-            <select value={spread?.short.strike ?? ''} onChange={(e) => setShortStrike(Number(e.target.value))}>
-              {/* Not the lowest strike: a short put needs a listed put below it to buy. */}
-              {putStrikes.slice(1).map((k) => (
+            <span>{strategy.strikeLabel}</span>
+            <select
+              value={(kind === 'put_credit_spread' ? position?.short.strike : position?.legs[0].strike) ?? ''}
+              onChange={(e) => setStrike(Number(e.target.value))}
+            >
+              {/* On a spread, not the lowest strike: the short put needs a listed put below it. */}
+              {(kind === 'put_credit_spread' ? strikes.slice(1) : strikes).map((k) => (
                 <option key={k} value={k}>
                   {price(k)}
-                  {chain && k >= chain.spot ? ' (ITM)' : ''}
+                  {chain && inTheMoney(strategy.side, k, chain.spot) ? ' (ITM)' : ''}
                 </option>
               ))}
             </select>
           </label>
         )}
 
-        <label className="control">
-          <span>Width</span>
-          <select value={spread ? round2(spread.width) : width} onChange={(e) => setWidth(Number(e.target.value))}>
-            {widths.map((w) => (
-              <option key={w} value={w}>
-                {price(w)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {kind === 'put_credit_spread' && (
+          <label className="control">
+            <span>Width</span>
+            <select
+              value={position ? round2(position.width) : width}
+              onChange={(e) => setWidth(Number(e.target.value))}
+            >
+              {widths.map((w) => (
+                <option key={w} value={w}>
+                  {price(w)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="control">
           <span>Contracts</span>
@@ -313,10 +443,7 @@ export default function SimulatorPage({ watchlist, params }) {
         <div className="control">
           <span>Entry price</span>
           <div className="segmented" role="radiogroup" aria-label="Entry price">
-            {[
-              ['conservative', 'Bid/ask'],
-              ['mid', 'Mid'],
-            ].map(([key, label]) => (
+            {strategy.entryLabels.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -340,11 +467,11 @@ export default function SimulatorPage({ watchlist, params }) {
             type="number"
             step="0.01"
             min="0"
-            placeholder={s ? price(s.creditConservative) : ''}
+            placeholder={s ? price(Math.abs(s.netConservative)) : ''}
             value={fill}
             onChange={(e) => setFill(e.target.value)}
             className="w-qty"
-            title="The credit per share you were actually filled at — overrides the entry price"
+            title={`The ${credit ? 'credit' : 'debit'} per share you were actually filled at`}
           />
         </label>
       </form>
@@ -354,16 +481,13 @@ export default function SimulatorPage({ watchlist, params }) {
       {sim?.picked?.note && <p className="warning small">{sim.picked.note}</p>}
       {!chain && !error && <p className="muted">Loading the chain…</p>}
 
-      {spread && (
+      {position && (
         // Refetch keeps the frame: while a new chain loads, the old render stays, dimmed.
         <div className={loading > 0 ? 'sim-body stale' : 'sim-body'}>
           <div className="sim-main">
             <section className="panel chart-panel">
               <div className="chart-head">
-                <h2>
-                  {chain.symbol} {price(spread.short.strike)}/{price(spread.long.strike)} put spread ·{' '}
-                  {shortDate(spread.expiration)}
-                </h2>
+                <h2>{describe(position, chain)}</h2>
                 <span className="muted small">
                   {chain.symbol} {price(chain.spot)} · ATM IV {pct(chain.atmIv)} · {dte} days
                 </span>
@@ -371,10 +495,8 @@ export default function SimulatorPage({ watchlist, params }) {
 
               <PayoffChart
                 curve={sim.curve}
-                spot={spread.spot}
-                shortStrike={spread.short.strike}
-                longStrike={spread.long.strike}
-                breakEven={s.breakEven}
+                spot={position.spot}
+                levels={levels}
                 sigma={s.expectedMove}
                 projectedLabel={projectedLabel}
                 projectedIsExpiry={sim.daysForward >= dte}
@@ -402,7 +524,8 @@ export default function SimulatorPage({ watchlist, params }) {
                   <span>
                     IV change <strong>{signedNumber(ivShift, 0)} pts</strong>{' '}
                     <span className="muted">
-                      short leg {pct(spread.short.iv)} → {pct(Math.max(spread.short.iv + ivShift / 100, 0.01))}
+                      {position.legs.length > 1 ? 'short leg' : 'this contract'} {pct(position.legs[0].iv)} →{' '}
+                      {pct(Math.max(position.legs[0].iv + ivShift / 100, 0.01))}
                     </span>
                   </span>
                   <input
@@ -422,44 +545,41 @@ export default function SimulatorPage({ watchlist, params }) {
             </section>
 
             <section className="panel">
-              <h2>Legs</h2>
+              <h2>{position.legs.length > 1 ? 'Legs' : 'Contract'}</h2>
               {/* Nine columns do not fit a phone; scroll the table, not the page. */}
               <div className="scroll-x">
-              <table className="legs">
-                <thead>
-                  <tr>
-                    <th>Action</th>
-                    <th>Strike</th>
-                    <th>Bid</th>
-                    <th>Ask</th>
-                    <th>Mid</th>
-                    <th>Delta</th>
-                    <th>IV</th>
-                    <th>OI</th>
-                    <th>Vol</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['sell', spread.short],
-                    ['buy', spread.long],
-                  ].map(([action, leg]) => (
-                    <tr key={action} className={action}>
-                      <td>
-                        {action} {quantity} put
-                      </td>
-                      <td>{price(leg.strike)}</td>
-                      <td>{price(leg.bid)}</td>
-                      <td>{price(leg.ask)}</td>
-                      <td>{price((leg.bid + leg.ask) / 2)}</td>
-                      <td>{leg.delta == null ? '—' : leg.delta.toFixed(3)}</td>
-                      <td>{pct(leg.iv)}</td>
-                      <td>{leg.openInterest ?? '—'}</td>
-                      <td>{leg.volume ?? '—'}</td>
+                <table className="legs">
+                  <thead>
+                    <tr>
+                      <th>Action</th>
+                      <th>Strike</th>
+                      <th>Bid</th>
+                      <th>Ask</th>
+                      <th>Mid</th>
+                      <th>Delta</th>
+                      <th>IV</th>
+                      <th>OI</th>
+                      <th>Vol</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {position.legs.map((leg) => (
+                      <tr key={`${leg.action}-${leg.type}-${leg.strike}`} className={leg.action}>
+                        <td>
+                          {leg.action} {quantity} {leg.type}
+                        </td>
+                        <td>{price(leg.strike)}</td>
+                        <td>{price(leg.bid)}</td>
+                        <td>{price(leg.ask)}</td>
+                        <td>{price((leg.bid + leg.ask) / 2)}</td>
+                        <td>{leg.delta == null ? '—' : leg.delta.toFixed(3)}</td>
+                        <td>{pct(leg.iv)}</td>
+                        <td>{leg.openInterest ?? '—'}</td>
+                        <td>{leg.volume ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
 
@@ -472,9 +592,20 @@ export default function SimulatorPage({ watchlist, params }) {
           <aside className="sim-side">
             <section className="panel">
               <div className="tiles">
-                <Tile label="Max profit" value={money(s.maxProfit)} tone="pos" />
+                <Tile
+                  label="Max profit"
+                  value={s.maxProfit === null ? 'No cap' : money(s.maxProfit)}
+                  tone="pos"
+                  // A long put's maximum is the strike going to zero. True, and misleading as a
+                  // headline unless it says so — nobody is pricing SPY at $0.
+                  hint={position.kind === 'long_put' ? 'if it goes to zero' : undefined}
+                />
                 <Tile label="Max loss" value={money(-s.maxLoss)} tone="neg" />
-                <Tile label="Return on risk" value={pct(s.returnOnRisk)} />
+                {credit ? (
+                  <Tile label="Return on risk" value={pct(s.returnOnRisk)} />
+                ) : (
+                  <Tile label="Move to break even" value={movePct(s.breakEven, position.spot)} />
+                )}
               </div>
 
               {s.warnings.map((w) => (
@@ -485,23 +616,54 @@ export default function SimulatorPage({ watchlist, params }) {
 
               <dl className="facts">
                 <Fact
-                  label="Credit"
-                  value={`${price(s.credit)} /sh`}
+                  label={credit ? 'Credit' : 'Debit'}
+                  value={`${price(credit ? s.credit : s.debit)} /sh`}
                   hint={
-                    spread.entry.source === 'override'
+                    position.entry.source === 'override'
                       ? 'your fill'
-                      : spread.entry.source === 'mid'
-                        ? `mid — bid/ask gives ${price(s.creditConservative)}`
-                        : `bid/ask — mid would be ${price(s.creditMid)}`
+                      : position.entry.source === 'mid'
+                        ? `mid — ${credit ? 'bid/ask' : 'the ask'} gives ${price(Math.abs(s.netConservative))}`
+                        : `${credit ? 'bid/ask' : 'the ask'} — mid would be ${price(Math.abs(s.netMid))}`
                   }
                 />
-                <Fact label="Break-even at expiry" value={price(s.breakEven)} hint={`${signedPctText(s.breakEven / spread.spot - 1)} from spot`} />
-                <Fact label="Win probability" value={pct(s.probProfit)} hint="finishes above break-even" />
-                <Fact label="Keep the full credit" value={pct(s.probMaxProfit)} hint="finishes above short strike" />
-                <Fact label="Lose the maximum" value={pct(s.probMaxLoss)} hint="finishes below long strike" />
-                <Fact label="Expected value" value={signed(s.expectedValue)} hint="two-outcome, like the screener" />
-                <Fact label="Expected move by expiry" value={`±${price(s.expectedMove)}`} hint="one standard deviation" />
+                <Fact
+                  label="Break-even at expiry"
+                  value={price(s.breakEven)}
+                  hint={`${movePct(s.breakEven, position.spot)} from spot`}
+                />
+                <Fact
+                  label="Win probability"
+                  value={pct(s.probProfit)}
+                  hint={`finishes ${credit || position.kind === 'long_call' ? 'above' : 'below'} break-even`}
+                />
+                {credit && (
+                  <Fact label="Keep the full credit" value={pct(s.probMaxProfit)} hint="finishes above short strike" />
+                )}
+                <Fact
+                  label={credit ? 'Lose the maximum' : 'Expires worthless'}
+                  value={pct(s.probMaxLoss)}
+                  hint={
+                    credit
+                      ? 'finishes below long strike'
+                      : `finishes ${position.kind === 'long_call' ? 'below' : 'above'} the strike`
+                  }
+                />
+                {credit && (
+                  <Fact label="Expected value" value={signed(s.expectedValue)} hint="two-outcome, like the screener" />
+                )}
+                <Fact
+                  label="Expected move by expiry"
+                  value={`±${price(s.expectedMove)}`}
+                  hint="one standard deviation"
+                />
               </dl>
+
+              {!credit && (
+                <p className="muted small">
+                  No expected value here: a long option&rsquo;s upside is a distribution, not one of
+                  two outcomes, so the screener&rsquo;s crude version would be worse than nothing.
+                </p>
+              )}
             </section>
 
             <section className="panel">
@@ -510,25 +672,26 @@ export default function SimulatorPage({ watchlist, params }) {
                 <Fact
                   label={`P&L if ${chain.symbol} is unchanged`}
                   value={<span className={sim.atSpot >= 0 ? 'pos' : 'neg'}>{signed(Math.round(sim.atSpot))}</span>}
-                  hint={`closing at ${price(spread.spot)}`}
+                  hint={`closing at ${price(position.spot)}`}
                 />
                 <Fact label="Delta" value={signedNumber(sim.greeks.delta, 1)} hint="$ per $1 move up" />
                 <Fact label="Theta" value={signedNumber(sim.greeks.theta, 2)} hint="$ per day" />
                 <Fact label="Vega" value={signedNumber(sim.greeks.vega, 2)} hint="$ per IV point" />
                 <Fact label="Gamma" value={signedNumber(sim.greeks.gamma, 3)} hint="delta change per $1" />
               </dl>
+
               {sim.daysForward === 0 && !ivShift && sim.atSpot < 0 && (
                 <p className="muted small">
-                  Negative on day one is expected: you sold at the bid and bought at the ask, and the
-                  position is marked at its model value in between.
+                  Negative on day one is expected: you {credit ? 'sold at the bid and bought at the ask' : 'paid the ask'},
+                  and the position is marked at its model value in between.
                 </p>
               )}
             </section>
 
             <p className="muted small">
               Before expiry these are Black-Scholes values from each leg&rsquo;s own IV, so they are
-              only as good as that vol. Dividends are ignored, and listed options are American — a
-              deep in-the-money short put can be assigned early, which this model cannot show.
+              only as good as that vol. Dividends are ignored, and listed options are American — an
+              option deep in the money can be assigned early, which this model cannot show.
             </p>
           </aside>
         </div>
@@ -537,11 +700,14 @@ export default function SimulatorPage({ watchlist, params }) {
   );
 }
 
-function Tile({ label, value, tone }) {
+function Tile({ label, value, tone, hint }) {
   return (
     <div className="tile">
       <span className={`tile-value ${tone ?? ''}`}>{value}</span>
-      <span className="tile-label">{label}</span>
+      <span className="tile-label">
+        {label}
+        {hint && <span className="tile-hint">{hint}</span>}
+      </span>
     </div>
   );
 }
@@ -558,6 +724,25 @@ function Fact({ label, value, hint }) {
   );
 }
 
+/** "SPY 540/535 put spread · Oct 23" or "SPY 555 call · Oct 23". */
+function describe(position, chain) {
+  const when = shortDate(position.expiration);
+
+  if (position.legs.length > 1) {
+    return `${chain.symbol} ${price(position.short.strike)}/${price(position.long.strike)} put spread · ${when}`;
+  }
+  const [leg] = position.legs;
+  return `${chain.symbol} ${price(leg.strike)} ${leg.type} · ${when}`;
+}
+
+const inTheMoney = (side, strike, spot) => (side === 'put' ? strike >= spot : strike <= spot);
+
+function movePct(target, spot) {
+  if (!Number.isFinite(target) || !(spot > 0)) return '—';
+  const move = target / spot - 1;
+  return `${move >= 0 ? '+' : '−'}${Math.abs(move * 100).toFixed(1)}%`;
+}
+
 function num(v) {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
@@ -571,4 +756,3 @@ function nearestBy(items, distance) {
 }
 
 const round2 = (x) => Math.round(x * 100) / 100;
-const signedPctText = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%` : '—');

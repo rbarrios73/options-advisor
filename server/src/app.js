@@ -317,9 +317,13 @@ export function createApp({ config, db = null }) {
       const spot = quote.last;
       const asOf = today();
 
-      // Puts only: the simulator builds put credit spreads, and a full chain on SPY is several
-      // hundred strikes per side — no reason to ship the half that is never read.
-      const puts = chain.options.filter((o) => o.type === 'put').sort((a, b) => a.strike - b.strike);
+      // Both sides: the simulator builds put credit spreads AND long calls, and switching
+      // strategy should not cost another request against the rate limit. A `side` parameter
+      // trims it for a caller that only wants one.
+      const side = req.query.side === 'put' || req.query.side === 'call' ? req.query.side : null;
+      const options = chain.options
+        .filter((o) => !side || o.type === side)
+        .sort((a, b) => a.strike - b.strike || a.type.localeCompare(b.type));
 
       res.json({
         symbol,
@@ -330,7 +334,7 @@ export function createApp({ config, db = null }) {
         dte: daysBetween(asOf, expiration),
         // Taken from both sides, as the screener does, so the probabilities agree between pages.
         atmIv: atmImpliedVol(chain.options, spot),
-        options: puts,
+        options,
       });
     }),
   );

@@ -206,23 +206,35 @@ to revisit first.
 
 ## The Simulator
 
-The second tab. Pick a put credit spread off a real chain, then move the date and implied vol to
-see what closing it early would look like — the same idea as TradingView's options builder.
+The second tab. Pick a position off a real chain, then move the date and implied vol to see what
+closing it early would look like — the same idea as TradingView's options builder.
 
-- **Choose the short put by delta or by strike.** By delta, it takes the *listed* put nearest the
-  target, because a strike that does not exist cannot be traded; if the chain cannot get within
-  0.03 of what you asked for, it says so. The long put is set by width.
-- **Entry price**: bid/ask (what a marketable order gets — the screener's convention), mid, or the
-  credit you were actually filled at.
+Three strategies: **put credit spread**, **long call**, **long put**. The engine is a list of
+legs, not a special case per strategy, so the P&L, the greeks and the chart are the same code for
+all of them; only the numbers that genuinely differ in shape — max profit, max loss, break-even —
+are worked out per kind.
+
+- **Choose the contract by delta or by strike.** By delta, it takes the *listed* contract nearest
+  the target, because a strike that does not exist cannot be traded; if the chain cannot get
+  within 0.03 of what you asked for, it says so. On a spread the long leg is set by width.
+- **Entry price**: the price a marketable order gets — the bid/ask on a spread, the ask on a long
+  option, which is the screener's convention — or mid, or what you were actually filled at.
+- **Long options read the other way round.** A credit spread collects theta and is short vega; a
+  long call or put pays theta and is long vega, and the page shows the signs rather than
+  explaining them. There is **no expected value** for a long option: its upside is a distribution,
+  not one of two outcomes, and the screener's crude version would be worse than nothing. A long
+  put's "max profit" is the strike going to zero, and is labelled as such.
 - **The chart** draws the payoff at expiry (solid) and the modelled value on the chosen date
   (dashed), with both strikes, the break-even, today's price and a ±1σ expected-move band. Hover,
   or focus it and use the arrow keys, for exact values.
 - **The table** is P&L by price and date. It has rows at exactly today's price, both strikes and
   the break-even, so "what happens at my short strike" gets an exact answer rather than the one
   five dollars away.
-- **Open in simulator** on any put credit spread in the screener carries the legs across, and the
-  headline numbers match the screener's to the cent — the simulator runs the screener's own
-  `metrics.js` in the browser, and a test holds the two to each other.
+- **Open in simulator** on any put credit spread, long call or long put in the screener carries the
+  legs across, and the headline numbers match the screener's to the cent — the simulator runs the
+  screener's own `metrics.js` in the browser, and tests hold the two to each other for every
+  strategy. Structures the simulator does not cover get no link, rather than a link that would
+  quietly show something else.
 
 Things the model does not know, stated on the page as well:
 
@@ -253,7 +265,7 @@ server/
     db.js       Postgres pool + schema
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         83 tests, no network and no database needed
+  test/         95 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · SimulatorPage · LoginPage · UsersPage · AccountPage
@@ -280,7 +292,8 @@ than thrown.
 
 For the simulator: Black-Scholes against textbook values, put-call parity, every greek against a
 finite difference of the price, the inverse normal against published quantiles, the expiry payoff
-at each kink, and the screener and simulator producing identical numbers for the same legs.
+at each kink of every strategy, the sign of each greek (a long option pays theta, a credit spread
+collects it), and the screener and simulator producing identical numbers for the same legs.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

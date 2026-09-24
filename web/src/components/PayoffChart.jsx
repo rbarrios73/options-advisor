@@ -15,9 +15,9 @@ import { money, price as fmtPrice, signed } from '../format.js';
 export default function PayoffChart({
   curve,
   spot,
-  shortStrike,
-  longStrike,
-  breakEven,
+  // Every labelled vertical: the legs' strikes, the break-even, the current price. Passed in
+  // rather than inferred, so the chart does not need to know which strategy it is drawing.
+  levels = [],
   sigma,
   projectedLabel,
   projectedIsExpiry,
@@ -39,12 +39,14 @@ export default function PayoffChart({
   const xOf = (p) => left + ((p - lo) / (hi - lo)) * iw;
 
   const markers = laneLayout(
-    [
-      { key: 'long', x: xOf(longStrike), text: `Long ${fmtPrice(longStrike)}`, kind: 'strike' },
-      { key: 'be', x: xOf(breakEven), text: `BE ${fmtPrice(breakEven)}`, kind: 'be' },
-      { key: 'short', x: xOf(shortStrike), text: `Short ${fmtPrice(shortStrike)}`, kind: 'strike' },
-      { key: 'spot', x: xOf(spot), text: `Spot ${fmtPrice(spot)}`, kind: 'spot' },
-    ].filter((mk) => mk.x >= left && mk.x <= left + iw),
+    levels
+      .map((level) => ({
+        key: level.key,
+        x: xOf(level.value),
+        text: `${level.label} ${fmtPrice(level.value)}`,
+        kind: level.kind ?? 'strike',
+      }))
+      .filter((mk) => mk.x >= left && mk.x <= left + iw),
     left,
     left + iw,
   );
@@ -112,6 +114,7 @@ export default function PayoffChart({
   const hover = hoverIdx != null ? curve[hoverIdx] : null;
   const hx = hover ? geo.x(hover.price) : 0;
   const lastPoint = curve.at(-1);
+  const expiryOnTop = projectedIsExpiry || lastPoint.expiry >= lastPoint.projected;
 
   const sigmaLo = sigma ? Math.max(geo.x(spot - sigma), m.left) : null;
   const sigmaHi = sigma ? Math.min(geo.x(spot + sigma), m.left + iw) : null;
@@ -147,7 +150,9 @@ export default function PayoffChart({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Profit and loss chart. Break-even ${fmtPrice(breakEven)}, short strike ${fmtPrice(shortStrike)}, long strike ${fmtPrice(longStrike)}, current price ${fmtPrice(spot)}. The table below the chart has the same values.`}
+        aria-label={`Profit and loss chart. ${levels
+          .map((l) => `${l.label} ${fmtPrice(l.value)}`)
+          .join(', ')}. The table below the chart has the same values.`}
         tabIndex={0}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHoverIdx(null)}
@@ -212,14 +217,30 @@ export default function PayoffChart({
         </g>
 
         {/* Break-even: a marker on the zero line, ringed so it reads against both fills. */}
-        <circle className="be-dot" cx={geo.x(breakEven)} cy={geo.zeroY} r={4.5} />
+        {levels
+          .filter((l) => l.kind === 'be')
+          .map((l) => (
+            <circle key={l.key} className="be-dot" cx={geo.x(l.value)} cy={geo.zeroY} r={4.5} />
+          ))}
 
-        {/* Direct labels at the right end: expiry above its line, projected below its own. */}
-        <text className="direct-label" x={m.left + iw - 6} y={geo.y(lastPoint.expiry) - 8} textAnchor="end">
+        {/* Direct labels at the right end. Each sits on the side away from the other line — on a
+            credit spread the projected line is below the payoff, on a long option it is above, so
+            a fixed above/below rule would put the labels in the wrong order half the time. */}
+        <text
+          className="direct-label"
+          x={m.left + iw - 6}
+          y={geo.y(lastPoint.expiry) + (expiryOnTop ? -8 : 16)}
+          textAnchor="end"
+        >
           At expiry
         </text>
         {!projectedIsExpiry && (
-          <text className="direct-label" x={m.left + iw - 6} y={geo.y(lastPoint.projected) + 16} textAnchor="end">
+          <text
+            className="direct-label"
+            x={m.left + iw - 6}
+            y={geo.y(lastPoint.projected) + (expiryOnTop ? 16 : -8)}
+            textAnchor="end"
+          >
             {projectedLabel}
           </text>
         )}

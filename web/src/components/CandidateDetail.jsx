@@ -53,16 +53,8 @@ export default function CandidateDetail({ candidate }) {
             taking a marketable order, and it is real money on a 4-leg condor.
           </p>
 
-          {c.kind === 'put_credit_spread' && (
-            <a
-              className="button"
-              href={hrefFor('simulator', {
-                symbol: c.symbol,
-                exp: c.expiration,
-                short: c.legs.find((l) => l.action === 'sell')?.strike,
-                long: c.legs.find((l) => l.action === 'buy')?.strike,
-              })}
-            >
+          {simulatorLink(c) && (
+            <a className="button" href={simulatorLink(c)}>
               Open in simulator →
             </a>
           )}
@@ -125,4 +117,25 @@ export default function CandidateDetail({ candidate }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The simulator covers put credit spreads, long calls and long puts. Anything else — a call
+ * credit spread, an iron condor — has no link rather than a link to something that would silently
+ * show a different position.
+ */
+function simulatorLink(c) {
+  const base = { symbol: c.symbol, exp: c.expiration, kind: c.kind };
+
+  if (c.kind === 'put_credit_spread') {
+    return hrefFor('simulator', {
+      ...base,
+      short: c.legs.find((l) => l.action === 'sell')?.strike,
+      long: c.legs.find((l) => l.action === 'buy')?.strike,
+    });
+  }
+  if (c.kind === 'long_call' || c.kind === 'long_put') {
+    return hrefFor('simulator', { ...base, strike: c.legs[0]?.strike });
+  }
+  return null;
 }

@@ -5,8 +5,12 @@ import { createMockProvider } from '../src/providers/mock.js';
 import { atmImpliedVol } from '../src/domain/strategies.js';
 import { creditSpreadMetrics } from '../src/domain/metrics.js';
 import { daysBetween } from '../src/domain/math.js';
+import { longOptionMetrics } from '../src/domain/metrics.js';
 import {
+  breakEvens,
+  createLongOption,
   createSpread,
+  pickLongOption,
   niceStep,
   pickPutSpread,
   pnlAt,
@@ -119,10 +123,10 @@ test('conservative headline numbers are identical to the screener’s for the sa
 test('mid pricing takes the larger credit, and an override wins over both', async () => {
   const { spread: conservative } = await spreadFor();
   const { spread: midPriced } = await spreadFor({ pricing: 'mid' });
-  const { spread: filled } = await spreadFor({ creditOverride: 1.23 });
+  const { spread: filled } = await spreadFor({ netOverride: 1.23 });
 
-  assert.ok(midPriced.entry.credit > conservative.entry.credit);
-  assert.equal(filled.entry.credit, 1.23);
+  assert.ok(midPriced.entry.net > conservative.entry.net);
+  assert.equal(filled.entry.net, 1.23);
   assert.equal(filled.entry.source, 'override');
 });
 
@@ -235,3 +239,160 @@ test('niceStep rounds to 1, 2, 2.5 or 5 of a power of ten', () => {
 function round2(x) {
   return Math.round(x * 100) / 100;
 }
+
+// ===============================================================================================
+// Long calls and long puts
+// ===============================================================================================
+
+async function longFor({ symbol = 'SPY', type = 'call', delta = 0.4, ...rest } = {}) {
+  const quote = await provider.getQuote(symbol);
+  const expirations = await provider.getExpirations(symbol);
+  const expiration = expirations.find((e) => daysBetween(asOf, e) >= 30);
+  const chain = await provider.getChain(symbol, expiration, quote.last);
+
+  const dte = daysBetween(asOf, expiration);
+  const atmIv = atmImpliedVol(chain.options, quote.last);
+  const picked = pickLongOption(chain, { type, by: 'delta', delta }, { atmIv, years: dte / 365 });
+  assert.ok(!picked.error, picked.error);
+
+  return {
+    chain,
+    atmIv,
+    dte,
+    leg: picked.legs[0],
+    position: createLongOption({ leg: picked.legs[0], type, spot: quote.last, expiration, asOf, atmIv, ...rest }),
+  };
+}
+
+test('picks the listed contract nearest the target delta, on either side of the chain', async () => {
+  for (const type of ['call', 'put']) {
+    const { chain, leg } = await longFor({ type, delta: 0.4 });
+    const same = chain.options.filter((o) => o.type === type);
+    const best = Math.min(...same.map((o) => Math.abs(Math.abs(o.delta) - 0.4)));
+
+    assert.equal(leg.type, type);
+    assert.equal(leg.action, 'buy');
+    close(Math.abs(Math.abs(leg.delta) - 0.4), best, 1e-12, `${type} nearest delta`);
+  }
+});
+
+test('a long option is a debit: you pay the ask, and mid would cost less', async () => {
+  const { position: atAsk } = await longFor();
+  const { position: atMid } = await longFor({ pricing: 'mid' });
+
+  assert.ok(atAsk.entry.net < 0, 'a debit is a negative net');
+  assert.equal(atAsk.entry.net, -atAsk.legs[0].ask, 'conservative means the ask');
+  assert.ok(atMid.entry.net > atAsk.entry.net, 'mid is a smaller debit');
+
+  const s = summarize(atAsk);
+  assert.equal(s.credit, null, 'nothing here is a credit');
+  assert.equal(s.debit, round2(atAsk.legs[0].ask));
+  assert.equal(s.maxLoss, round2(atAsk.legs[0].ask * 100), 'the most you can lose is what you paid');
+});
+
+test('long call: break-even is strike plus debit, and the upside has no ceiling', async () => {
+  const { position } = await longFor({ type: 'call' });
+  const s = summarize(position);
+  const { strike } = position.legs[0];
+  const debit = s.debit;
+
+  close(s.breakEven, strike + debit, 1e-9, 'break-even');
+  assert.equal(s.maxProfit, null, 'unbounded, and reported as unknown rather than a big number');
+  assert.equal(s.returnOnRisk, null, 'undefined without a profit target');
+  assert.equal(s.expectedValue, null, 'two outcomes cannot describe an open-ended payoff');
+
+  close(pnlAtExpiry(position, strike - 10), -s.maxLoss, 1e-9, 'worthless below the strike');
+  close(pnlAtExpiry(position, strike), -s.maxLoss, 1e-9, 'at the strike');
+  close(pnlAtExpiry(position, s.breakEven), 0, 1e-6, 'at break-even');
+  close(pnlAtExpiry(position, s.breakEven + 10), 1000, 1e-6, '$10 beyond break-even is $1,000');
+});
+
+test('long put: break-even is strike minus debit, and max profit is the strike going to zero', async () => {
+  const { position } = await longFor({ type: 'put' });
+  const s = summarize(position);
+  const { strike } = position.legs[0];
+
+  close(s.breakEven, strike - s.debit, 1e-9, 'break-even');
+  close(s.maxProfit, (strike - s.debit) * 100, 1e-6, 'the strike less what you paid');
+
+  close(pnlAtExpiry(position, strike + 10), -s.maxLoss, 1e-9, 'worthless above the strike');
+  close(pnlAtExpiry(position, s.breakEven), 0, 1e-6, 'at break-even');
+  close(pnlAtExpiry(position, 0.01), s.maxProfit, 1, 'underlying to zero');
+});
+
+test('long options agree with the screener for the same contract', async () => {
+  for (const type of ['call', 'put']) {
+    const { position, leg, atmIv, dte } = await longFor({ type });
+    const s = summarize(position);
+
+    const screener = longOptionMetrics({ leg, type, spot: position.spot, iv: atmIv, years: Math.max(dte, 0.5) / 365 });
+    assert.ok(screener, `${type}: the screener should accept this`);
+
+    for (const key of ['maxProfit', 'maxLoss', 'breakEven', 'probProfit']) {
+      assert.equal(s[key], screener[key], `${type} ${key}`);
+    }
+  }
+});
+
+test('long options are the mirror of short premium: time hurts, rising vol helps', async () => {
+  for (const type of ['call', 'put']) {
+    const { position } = await longFor({ type });
+    const at = position.spot;
+
+    const early = pnlAt(position, at, 0);
+    const late = pnlAt(position, at, position.dte - 1);
+    assert.ok(late < early, `${type}: time decay works against you (${early} → ${late})`);
+
+    assert.ok(pnlAt(position, at, 5, +10) > pnlAt(position, at, 5, 0), `${type}: vol up helps`);
+    assert.ok(pnlAt(position, at, 5, -5) < pnlAt(position, at, 5, 0), `${type}: vol down hurts`);
+  }
+});
+
+test('long option greeks have the signs a buyer expects, and delta matches the P&L slope', async () => {
+  const cases = [['call', 1], ['put', -1]];
+
+  for (const [type, direction] of cases) {
+    const { position } = await longFor({ type });
+    const g = positionGreeks(position, position.spot, 3, 0);
+
+    assert.ok(Math.sign(g.delta) === direction, `${type} delta points ${direction > 0 ? 'up' : 'down'}`);
+    assert.ok(g.gamma > 0, `${type}: long gamma`);
+    assert.ok(g.theta < 0, `${type}: paying theta`);
+    assert.ok(g.vega > 0, `${type}: long vega`);
+
+    const h = 0.05;
+    const slope = (pnlAt(position, position.spot + h, 3) - pnlAt(position, position.spot - h, 3)) / (2 * h);
+    close(g.delta, slope, 0.05, `${type} delta vs slope`);
+  }
+});
+
+test('the chart and table cover a long option the same way they cover a spread', async () => {
+  const { position } = await longFor({ type: 'call' });
+  const s = summarize(position);
+  const { strike } = position.legs[0];
+
+  const curve = pnlCurve(position, { daysForward: 5 });
+  const prices = curve.map((p) => p.price);
+  assert.ok(prices.includes(strike), 'the kink at the strike is sampled exactly');
+  assert.ok(prices[0] < strike && prices.at(-1) > position.spot, 'and the range spans it');
+  for (let i = 1; i < curve.length; i++) assert.ok(curve[i].price > curve[i - 1].price);
+
+  const grid = pnlGrid(position, { rows: 9, columns: 5 });
+  assert.equal(grid.prices.filter((p) => Math.abs(p - strike) < 1e-6).length, 1, 'one row at the strike');
+  assert.equal(grid.keyLevels.strike, round2(strike), 'labelled "strike", not "short"/"long"');
+  for (let r = 0; r < grid.prices.length; r++) {
+    assert.equal(grid.values[r].at(-1), Math.round(pnlAtExpiry(position, grid.prices[r])) || 0);
+  }
+
+  assert.deepEqual(breakEvens(position), [s.breakEven]);
+});
+
+test('a far out-of-the-money option is flagged as needing more than the expected move', async () => {
+  const { position } = await longFor({ type: 'call', delta: 0.05 });
+  const { warnings } = summarize(position);
+
+  assert.ok(
+    warnings.some((w) => /expected move/.test(w)),
+    `expected a warning, got ${JSON.stringify(warnings)}`,
+  );
+});
