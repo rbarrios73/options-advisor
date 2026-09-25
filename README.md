@@ -228,9 +228,30 @@ That is a reasonable bar for a screener holding a broker **read** token. It is n
 something that can place orders — if this app ever gets a token that can trade, this is the part
 to revisit first.
 
+## The Ticker tab
+
+Look up one symbol: what it costs now, and what it has done — the price page a screener sends
+you off to a finance site for.
+
+- **Ranges** 1M / 3M / 6M / YTD / 1Y / 5Y. Five years is asked for as weekly bars, because 1,260
+  daily points is a fifth of a megabyte to draw a shape you can see in 260.
+- **The chart** is one line over a dashed baseline at the period's opening price. Hover, or focus
+  it and use the arrow keys, for that day's open, high, low, volume and the move since the start
+  of the period. Bars are spaced by trading day, not by calendar date, so a weekend is not a gap
+  that reads as the market standing still. Under it, the same series as a table.
+- **The panel** has the day's numbers (open, range, previous close, bid/ask, volume, 52-week
+  range) and the period's (high and low with the dates they happened, change, average volume, how
+  far off the period high it is now).
+- **Add to watchlist** and **Open in simulator** are there, so a symbol you looked up can go
+  straight into the screener's list or into a position.
+
+The address holds the symbol and the range (`#/ticker?symbol=IWM&range=1Y`), so a chart can be
+bookmarked or sent to someone. Quotes and bars are cached alongside the scan's, so flicking
+between ranges and symbols does not spend the provider's rate limit twice.
+
 ## The Simulator
 
-The second tab. Pick a position off a real chain, then move the date and implied vol to see what
+The third tab. Pick a position off a real chain, then move the date and implied vol to see what
 closing it early would look like — the same idea as TradingView's options builder.
 
 Three strategies: **put credit spread**, **long call**, **long put**. The engine is a list of
@@ -282,6 +303,7 @@ server/
   src/
     domain/     math.js · metrics.js · strategies.js · score.js    ← all the arithmetic, no I/O
                 pricing.js · simulate.js                           ← Black-Scholes and the simulator
+                history.js                                         ← ranges and series summaries
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     auth.js     sign-in: basic auth (single user) or session cookies (accounts)
@@ -289,12 +311,12 @@ server/
     db.js       Postgres pool + schema
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         100 tests, no network and no database needed
+  test/         110 tests, no network and no database needed
 web/
   src/
-    pages/      ScreenerPage · SimulatorPage · LoginPage · UsersPage · AccountPage
-    components/ PayoffChart (SVG) · PnlGrid · ResultsTable · …
-    router.js   hash routing — two pages do not need a library
+    pages/      ScreenerPage · TickerPage · SimulatorPage · LoginPage · UsersPage · AccountPage
+    components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable · …
+    router.js   hash routing — a handful of pages do not need a library
 ```
 
 `server/src/domain/` is imported by the browser as well as the server (Vite aliases it as
@@ -318,6 +340,12 @@ For the simulator: Black-Scholes against textbook values, put-call parity, every
 finite difference of the price, the inverse normal against published quantiles, the expiry payoff
 at each kink of every strategy, the sign of each greek (a long option pays theta, a credit spread
 collects it), and the screener and simulator producing identical numbers for the same legs.
+
+For the ticker tab: what each range window means (YTD is the year, not 365 days), that five years
+comes back weekly, that a series summary reports the intraday extremes rather than the closes, and
+that the last bar of the chart is exactly the quote in the header — including its open, high, low
+and volume, and whichever range was asked for. A chart disagreeing with the number printed above
+it is the bug most worth a test here.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

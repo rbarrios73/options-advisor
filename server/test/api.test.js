@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 import { createApp, prepare } from '../src/app.js';
 import { migrate } from '../src/db.js';
+import { DEFAULT_RANGE } from '../src/domain/history.js';
 
 // The real routes over real HTTP, against a real (in-process) Postgres. Cookies, status codes and
 // cross-account isolation are the sort of thing that only a round trip actually proves.
@@ -371,4 +372,89 @@ test('with no database the app runs single-user behind one shared password', asy
 
   // The account routes do not exist in this mode.
   assert.equal((await fetch(`${base}/api/users`, { headers: { authorization: auth } })).status, 404);
+});
+
+// --- ticker lookup -----------------------------------------------------------------------------
+
+test('quote and history need a session, and reject a nonsense symbol', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const anon = s.client();
+  assert.equal((await anon('/api/quote?symbol=SPY')).status, 401);
+  assert.equal((await anon('/api/history?symbol=SPY')).status, 401);
+
+  const call = s.client();
+  await call.signIn(ADMIN);
+  assert.equal((await call('/api/quote?symbol=not-a-symbol')).status, 400);
+  assert.equal((await call('/api/history?symbol=')).status, 400);
+});
+
+test('a quote carries what a ticker page needs to show', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const { status, body } = await call('/api/quote?symbol=spy');
+  assert.equal(status, 200);
+  assert.equal(body.symbol, 'SPY', 'normalised to upper case');
+  assert.ok(body.quote.last > 0);
+  assert.ok(body.asOf.match(/^\d{4}-\d{2}-\d{2}$/));
+
+  // The stats panel reads these by name. A provider that stops filling one shows a column of
+  // dashes rather than an error, which is the kind of quiet rot a test is for.
+  for (const field of ['open', 'high', 'low', 'prevClose', 'volume', 'averageVolume', 'week52High', 'week52Low']) {
+    assert.ok(Number.isFinite(body.quote[field]), `${field} is a number`);
+  }
+
+  assert.ok(body.quote.week52Low <= body.quote.last && body.quote.last <= body.quote.week52High);
+  assert.ok(body.quote.low <= body.quote.high);
+});
+
+test('history returns bars for the range asked for, and defaults when it is not', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const month = (await call('/api/history?symbol=SPY&range=1M')).body;
+  assert.equal(month.range, '1M');
+  assert.equal(month.interval, 'daily');
+  assert.ok(month.bars.length > 10 && month.bars.length < 31, `${month.bars.length} bars`);
+  assert.ok(month.bars.every((b) => b.close > 0 && b.date >= month.start && b.date <= month.end));
+
+  const year = (await call('/api/history?symbol=SPY&range=1Y')).body;
+  assert.ok(year.bars.length > month.bars.length * 5, 'a year holds far more bars than a month');
+
+  const fiveYear = (await call('/api/history?symbol=SPY&range=5Y')).body;
+  assert.equal(fiveYear.interval, 'weekly', 'five years is weekly, or the payload is absurd');
+
+  // An unknown range falls back rather than erroring, so a stale bookmark still works.
+  assert.equal((await call('/api/history?symbol=SPY&range=nonsense')).body.range, DEFAULT_RANGE);
+});
+
+test('the last bar agrees with the quote, so the chart and the header cannot disagree', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const { quote } = (await call('/api/quote?symbol=SPY')).body;
+  const { bars } = (await call('/api/history?symbol=SPY&range=3M')).body;
+
+  assert.equal(bars.at(-1).close, quote.last);
+
+  // And the whole of today's bar, not just its close — the header prints the day's open, range
+  // and volume right above the chart's last point, so a difference would be visible on screen.
+  const today = bars.at(-1);
+  assert.equal(today.open, quote.open);
+  assert.equal(today.high, quote.high);
+  assert.equal(today.low, quote.low);
+  assert.equal(today.volume, quote.volume);
+
+  // Asking for a different range must not redraw today. It did not, first time round, because
+  // the generator walked forwards from the start of the window.
+  const year = (await call('/api/history?symbol=SPY&range=1Y')).body;
+  assert.deepEqual(year.bars.at(-1), today);
 });

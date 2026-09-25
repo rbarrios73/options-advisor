@@ -5,6 +5,7 @@
 
 export const PAGES = {
   screener: { label: 'Screener' },
+  ticker: { label: 'Ticker' },
   simulator: { label: 'Simulator' },
 
   // accountsOnly as well as adminOnly, and both are load-bearing: with no database the app runs

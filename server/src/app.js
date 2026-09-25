@@ -23,6 +23,7 @@ import { createScanner } from './scan.js';
 import { DEFAULT_FILTERS, STRATEGIES, atmImpliedVol } from './domain/strategies.js';
 import { DEFAULT_WEIGHTS } from './domain/score.js';
 import { daysBetween } from './domain/math.js';
+import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/history.js';
 
 /**
  * Builds the Express app.
@@ -339,7 +340,41 @@ export function createApp({ config, db = null }) {
     }),
   );
 
-  // The built front end, when there is one. Two services on a host is two things to configure and
+  // --- ticker lookup ------------------------------------------------------------------------------
+
+app.get(
+  '/api/quote',
+  gate,
+  wrap(async (req, res) => {
+    const symbol = symbolParam(req, res);
+    if (!symbol) return;
+
+    res.json({ symbol, asOf: today(), quote: await scanner.quote(symbol) });
+  }),
+);
+
+app.get(
+  '/api/history',
+  gate,
+  wrap(async (req, res) => {
+    const symbol = symbolParam(req, res);
+    if (!symbol) return;
+
+    // Only the ranges the UI offers: the range name decides a date window and an interval, and
+    // letting a caller pass arbitrary start dates is how one request asks for twenty years of
+    // daily bars and spends the whole rate limit.
+    const range = isRange(req.query.range) ? req.query.range : DEFAULT_RANGE;
+    const asOf = today();
+    const start = startDateFor(range, asOf);
+    const interval = intervalFor(range);
+
+    const bars = await scanner.history(symbol, { start, end: asOf, interval });
+
+    res.json({ symbol, range, interval, start, end: asOf, bars });
+  }),
+);
+
+// The built front end, when there is one. Two services on a host is two things to configure and
   // two things to pay for; one process serving both is neither.
   const indexHtml = join(config.webDist, 'index.html');
   const hasBuiltUi = existsSync(indexHtml);

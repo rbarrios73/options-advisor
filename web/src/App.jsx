@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { hrefFor, pagesFor, useRoute } from './router.js';
 import ScreenerPage from './pages/ScreenerPage.jsx';
 import SimulatorPage from './pages/SimulatorPage.jsx';
+import TickerPage from './pages/TickerPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
@@ -142,6 +143,13 @@ export default function App() {
         <UsersPage me={user} />
       ) : page === 'account' ? (
         <AccountPage me={user} />
+      ) : page === 'ticker' ? (
+        <TickerPage
+          key={route.params.symbol ?? ''}
+          watchlist={settings.watchlist}
+          onWatchlist={saveWatchlist}
+          params={route.params}
+        />
       ) : page === 'simulator' ? (
         // Keyed on the incoming parameters: a new link (from a screener row, or an edited URL)
         // starts a fresh simulation, while the page's own URL updates do not remount it.

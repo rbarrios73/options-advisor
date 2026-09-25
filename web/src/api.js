@@ -40,6 +40,11 @@ export const api = {
       body: JSON.stringify({ filters, weights }),
     }).then(json),
 
+  quote: (symbol) => fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}`).then(json),
+
+  history: (symbol, range) =>
+    fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`).then(json),
+
   expirations: (symbol) =>
     fetch(`/api/expirations?symbol=${encodeURIComponent(symbol)}`).then(json),
 

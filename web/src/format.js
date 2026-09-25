@@ -21,6 +21,13 @@ export const signed = (v) => (has(v) ? `${v > 0 ? '+' : ''}${money(v)}` : '—')
 
 export const signedNumber = (v, dp = 2) => (has(v) ? `${v > 0 ? '+' : ''}${v.toFixed(dp)}` : '—');
 
+/**
+ * "4.41M" — share volumes, which run to nine figures and are unreadable written out. Three
+ * significant figures, because the difference between 4.41M and 4.42M shares is noise.
+ */
+export const compact = (v) =>
+  has(v) ? v.toLocaleString('en-US', { notation: 'compact', maximumSignificantDigits: 3 }) : '—';
+
 /** "Oct 23" — how a trader names an expiry. */
 export const shortDate = (iso) =>
   iso

@@ -56,9 +56,45 @@ export function createTradierProvider({ token, mode = 'sandbox', fetchImpl = fet
         symbol: q.symbol,
         last: num(q.last) ?? num(q.close) ?? num(q.prevclose),
         change: num(q.change),
-        changePct: num(q.change_percentage),
+        // Tradier reports this as a percentage (1.23 meaning 1.23%); the app works in fractions
+        // everywhere else, so it is converted here rather than in four places downstream.
+        changePct: num(q.change_percentage) === null ? null : num(q.change_percentage) / 100,
         description: q.description,
+        exchange: q.exch,
+        open: num(q.open),
+        high: num(q.high),
+        low: num(q.low),
+        prevClose: num(q.prevclose),
+        bid: num(q.bid),
+        ask: num(q.ask),
+        volume: num(q.volume),
+        averageVolume: num(q.average_volume),
+        week52High: num(q.week_52_high),
+        week52Low: num(q.week_52_low),
+        tradeDate: q.trade_date ? new Date(num(q.trade_date)).toISOString() : null,
       };
+    },
+
+    /**
+     * Daily (or weekly) bars. Tradier returns a bare object rather than an array when the range
+     * holds exactly one day, which is the shape that breaks a naive .map on a quiet symbol.
+     */
+    async getHistory(symbol, { start, end, interval = 'daily' } = {}) {
+      const data = await call('/markets/history', { symbol, interval, start, end });
+
+      const days = data?.history?.day;
+      if (!days) return [];
+
+      return (Array.isArray(days) ? days : [days])
+        .map((d) => ({
+          date: d.date,
+          open: num(d.open),
+          high: num(d.high),
+          low: num(d.low),
+          close: num(d.close),
+          volume: num(d.volume) ?? 0,
+        }))
+        .filter((d) => d.date && d.close > 0);
     },
 
     async getExpirations(symbol) {

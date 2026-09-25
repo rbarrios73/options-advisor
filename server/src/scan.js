@@ -75,6 +75,12 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
     // Single lookups for the simulator. They go through the same cache as a scan, so opening a
     // spread straight from a screener row costs no extra requests against the provider's limit.
     quote: (symbol) => cached(`quote:${symbol}`, () => provider.getQuote(symbol)),
+
+    /** Daily bars, cached like everything else so flicking between ranges is not a new request. */
+    history: (symbol, { start, end, interval }) =>
+      cached(`hist:${symbol}:${interval}:${start}:${end}`, () =>
+        provider.getHistory(symbol, { start, end, interval }),
+      ),
     expirations: (symbol) => cached(`exp:${symbol}`, () => provider.getExpirations(symbol)),
     async chain(symbol, expiration) {
       const quote = await cached(`quote:${symbol}`, () => provider.getQuote(symbol));

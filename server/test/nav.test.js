@@ -14,17 +14,17 @@ test('single user: no Users or Account tab, because those routes do not exist wi
   // answered "No such endpoint."
   const single = { accounts: false, user: { id: 'local', email: null, role: 'admin' } };
 
-  assert.deepEqual(names(single), ['screener', 'simulator']);
+  assert.deepEqual(names(single), ['screener', 'ticker', 'simulator']);
 });
 
 test('accounts: admins get Users, members do not, everyone gets Account', () => {
   const admin = { accounts: true, user: { id: '1', role: 'admin' } };
   const member = { accounts: true, user: { id: '2', role: 'member' } };
 
-  assert.deepEqual(names(admin), ['screener', 'simulator', 'users', 'account']);
-  assert.deepEqual(names(member), ['screener', 'simulator', 'account']);
+  assert.deepEqual(names(admin), ['screener', 'ticker', 'simulator', 'users', 'account']);
+  assert.deepEqual(names(member), ['screener', 'ticker', 'simulator', 'account']);
 });
 
 test('nobody signed in gets no privileged tabs', () => {
-  assert.deepEqual(names({ accounts: true, user: null }), ['screener', 'simulator']);
+  assert.deepEqual(names({ accounts: true, user: null }), ['screener', 'ticker', 'simulator']);
 });

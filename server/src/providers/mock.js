@@ -34,14 +34,37 @@ export function createMockProvider({ today = new Date() } = {}) {
     name: 'mock',
 
     async getQuote(symbol) {
-      const base = UNIVERSE[symbol.toUpperCase()];
+      const key = symbol.toUpperCase();
+      const base = UNIVERSE[key];
       if (!base) throw new Error(`Mock provider has no data for ${symbol}`);
+
+      // The day's numbers and the 52-week range come out of the same generator the chart uses, so
+      // the header agrees with the line under it. Walking backwards means the last bar is drawn
+      // first from the same seed, whatever range was asked for — today's bar is always the same.
+      const year = buildHistory(key, base, { start: isoDaysBefore(today, 366), end: iso(today) }, today);
+      const day = year.at(-1);
+      const prev = year.at(-2) ?? day;
+
+      const change = day ? round2(day.close - prev.close) : 0;
+
       return {
-        symbol: symbol.toUpperCase(),
+        symbol: key,
         last: base.spot,
-        change: 0,
-        changePct: 0,
-        description: `${symbol.toUpperCase()} (synthetic)`,
+        change,
+        changePct: prev?.close > 0 ? change / prev.close : 0,
+        description: `${key} (synthetic)`,
+        exchange: 'MOCK',
+        open: day?.open ?? base.spot,
+        high: day?.high ?? base.spot,
+        low: day?.low ?? base.spot,
+        prevClose: prev?.close ?? base.spot,
+        bid: round2(base.spot * 0.9995),
+        ask: round2(base.spot * 1.0005),
+        volume: day?.volume ?? 0,
+        averageVolume: Math.round(year.reduce((sum, b) => sum + b.volume, 0) / Math.max(year.length, 1)),
+        week52High: Math.max(...year.map((b) => b.high)),
+        week52Low: Math.min(...year.map((b) => b.low)),
+        tradeDate: day ? `${day.date}T20:00:00.000Z` : null,
       };
     },
 
@@ -49,6 +72,20 @@ export function createMockProvider({ today = new Date() } = {}) {
       if (!UNIVERSE[symbol.toUpperCase()]) throw new Error(`Mock provider has no data for ${symbol}`);
       // Weeklies out to ~3 months, on Fridays.
       return fridaysAhead(today, 13);
+    },
+
+    /**
+     * Synthetic daily bars, deterministic per symbol so the chart does not reshuffle itself on
+     * every request, and walked BACKWARDS from today's price so the last bar agrees with the
+     * quote. A series that ends somewhere other than the quoted price is the kind of detail that
+     * makes a mock useless for checking the UI.
+     */
+    async getHistory(symbol, { start, end, interval = 'daily' } = {}) {
+      const key = symbol.toUpperCase();
+      const base = UNIVERSE[key];
+      if (!base) throw new Error(`Mock provider has no data for ${symbol}`);
+
+      return buildHistory(key, base, { start, end, interval }, today);
     },
 
     async getChain(symbol, expiration, spot) {
@@ -77,6 +114,51 @@ export function createMockProvider({ today = new Date() } = {}) {
       return { symbol: symbol.toUpperCase(), expiration, spot: price, options };
     },
   };
+}
+
+function buildHistory(key, base, { start, end, interval = 'daily' }, today) {
+  const last = end ? new Date(`${end}T00:00:00Z`) : new Date(today);
+  const from = new Date(`${start ?? '1970-01-01'}T00:00:00Z`);
+  const step = interval === 'weekly' ? 7 : interval === 'monthly' ? 30 : 1;
+
+  const rand = seeded(key);
+  const daily = base.baseIv / Math.sqrt(252);      // a day's worth of the symbol's own vol
+  const drift = 0.00025 * step;                    // a gentle upward tilt, as indices have had
+
+  const bars = [];
+  let close = base.spot;
+
+  for (let d = new Date(last); d >= from; d.setUTCDate(d.getUTCDate() - step)) {
+    const day = d.getUTCDay();
+    if (step === 1 && (day === 0 || day === 6)) continue;   // no weekend bars
+
+    const date = d.toISOString().slice(0, 10);
+    const wobble = daily * Math.sqrt(step) * (rand() * 2 - 1) * 1.6;
+    const open = close * (1 - wobble * 0.6);
+    const spread = Math.abs(wobble) * close * 0.8 + close * 0.001;
+
+    bars.push({
+      date,
+      open: round2(open),
+      high: round2(Math.max(open, close) + spread * rand()),
+      low: round2(Math.min(open, close) - spread * rand()),
+      close: round2(close),
+      volume: Math.round((2_000_000 + rand() * 6_000_000) * (step === 1 ? 1 : step)),
+    });
+
+    // Step the price back one period: undo the drift, then the wobble.
+    close = close / (1 + drift) * (1 - wobble);
+  }
+
+  return bars.reverse();
+}
+
+const iso = (date) => new Date(date).toISOString().slice(0, 10);
+
+function isoDaysBefore(date, days) {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() - days);
+  return iso(d);
 }
 
 function buildOption({ symbol, type, strike, price, base, years, dte, expiration }) {
@@ -162,3 +244,25 @@ const round = (x) => Math.round(x);
 // Confusing the two silently zeroes everything, which is exactly what it did the first time.
 const roundTo = (x, step) => Math.round(x / step) * step;
 const roundDp = (x, dp) => Math.round(x * 10 ** dp) / 10 ** dp;
+
+/**
+ * A small deterministic generator (mulberry32), seeded from the symbol — so SPY's chart is the
+ * same every time it is drawn, and different from QQQ's.
+ */
+function seeded(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let a = h >>> 0;
+  return function next() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const round2 = (x) => Math.round(x * 100) / 100;
