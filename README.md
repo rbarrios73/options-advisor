@@ -1,4 +1,4 @@
-# Options Advisor
+# Option Advisor
 
 A daily screener for defined-risk options structures — put and call credit spreads, iron condors,
 long calls and puts — over a watchlist you control. React front end, Node/Express API, Tradier for
@@ -176,6 +176,30 @@ Render's own free Postgres is deleted 30 days after it is created, taking every 
 
 `APP_PASSWORD` is ignored once `DATABASE_URL` is set — the sign-in screen replaces it.
 
+### Trying it locally first
+
+Accounts work against any Postgres, including one on your own machine, so you can see the whole
+thing before pointing it at a hosted database:
+
+```bash
+# any local Postgres will do; this is the Debian/Ubuntu spelling
+sudo -u postgres psql -c "CREATE ROLE oa LOGIN PASSWORD 'oa_pass'"
+sudo -u postgres createdb -O oa optionadvisor
+
+cd server
+DATABASE_URL=postgres://oa:oa_pass@127.0.0.1:5432/optionadvisor \
+PGSSL=disable \
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='a long enough password' \
+npm start
+```
+
+`PGSSL=disable` because a local server has no certificate to present. Against a hosted database
+you leave it unset and TLS is used with the certificate verified — there are tests pinning that
+decision both ways, since it is the kind of thing that only fails once it is deployed.
+
+The tables are created on boot and the admin account with them. Nothing else changes: the same
+code path runs against Neon, Supabase, Render or a local server.
+
 ### How it behaves
 
 - **Two roles.** Admins can add, disable and delete accounts and set passwords; members just use
@@ -265,7 +289,7 @@ server/
     db.js       Postgres pool + schema
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         95 tests, no network and no database needed
+  test/         100 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · SimulatorPage · LoginPage · UsersPage · AccountPage

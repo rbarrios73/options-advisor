@@ -35,7 +35,7 @@ export function basicAuth({ user, password }) {
       if (supplied.length === expected.length && timingSafeEqual(supplied, expected)) return next();
     }
 
-    res.set('WWW-Authenticate', 'Basic realm="Options Advisor", charset="UTF-8"');
+    res.set('WWW-Authenticate', 'Basic realm="Option Advisor", charset="UTF-8"');
     res.status(401).json({ error: 'Authentication required.' });
   };
 }

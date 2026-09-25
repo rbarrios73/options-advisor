@@ -410,3 +410,34 @@ table.users-table td select { padding: 3px 6px; font-size: 12px; }
 .tag.warn { border-color: var(--warn); color: var(--warn); }
 
 .account-page, .users-page { max-width: 900px; }
+
+/* --- brand ------------------------------------------------------------------------------- */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand img {
+  /* Fixed box, so the header does not jump between the logo loading and not. */
+  height: 40px;
+  width: auto;
+  display: block;
+}
+.brand h1 { padding: 12px 0; }
+.brand:hover h1 { color: var(--text); }
+
+/* The logo is drawn for light backgrounds — its navy wordmark all but vanishes on this one — so
+   it sits on a white tile rather than being recoloured. Same treatment as the app icon, and it
+   leaves the brand asset itself untouched. */
+.signin-logo {
+  align-self: center;
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 22px;
+  width: min(260px, 78%);
+  height: auto;
+  margin-bottom: 6px;
+}

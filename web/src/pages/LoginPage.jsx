@@ -33,7 +33,8 @@ export default function LoginPage({ onSignedIn }) {
   return (
     <div className="signin">
       <form className="panel signin-card" onSubmit={submit}>
-        <h1>Options Advisor</h1>
+        {/* The logo is the heading here, so it carries the name rather than decorating one. */}
+        <img className="signin-logo" src="/logo.png" alt="Option Advisor" width="240" height="226" />
         <p className="muted small">Sign in to see your watchlist.</p>
 
         <label className="field">

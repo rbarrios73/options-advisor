@@ -104,7 +104,12 @@ export default function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <h1>Options Advisor</h1>
+        <a className="brand" href={hrefFor('screener')}>
+          {/* The wordmark already says the name on the sign-in screen; here the monogram sits
+              beside the heading, so alt="" keeps a screen reader from reading it twice. */}
+          <img src="/logo-mark.png" alt="" width="58" height="40" />
+          <h1>Option Advisor</h1>
+        </a>
 
         <nav className="tabs" aria-label="Pages">
           {allowed.map(([key, { label }]) => (
