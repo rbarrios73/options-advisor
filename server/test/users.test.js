@@ -220,15 +220,118 @@ test('saved settings survive, and missing keys are filled in from the defaults',
   const user = await users.create({ email: 'a@b.com', password: GOOD });
 
   // A row written by an older version of the app, with no filters or weights at all.
-  await db.query(`INSERT INTO settings (user_id, data) VALUES ($1, $2)`, [
-    user.id,
-    JSON.stringify({ watchlist: [{ symbol: 'QQQ' }] }),
-  ]);
+  await db.query(`INSERT INTO settings (user_id, data) VALUES ($1, $2)`, [user.id, JSON.stringify({})]);
 
   const state = await settings.read(user.id);
-  assert.deepEqual(state.watchlist, [{ symbol: 'QQQ' }]);
   assert.ok(state.filters.minDte > 0, 'filters filled in');
   assert.ok(state.weights.probProfit > 0, 'weights filled in');
+});
+
+test('a new account opens on the default watchlist, and clearing it makes it stay clear', async () => {
+  const { users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  const seeded = (await settings.read(user.id)).watchlist;
+  assert.ok(seeded.length >= 5, `${seeded.length} symbols seeded`);
+  assert.equal(seeded[0].symbol, 'SPY', 'and in the order the defaults are written in');
+
+  await settings.setWatchlist(user.id, []);
+  assert.deepEqual((await settings.read(user.id)).watchlist, [], 'empty is a list you chose');
+});
+
+test('the watchlist is rows: order is kept, entries are tidied, and duplicates collapse', async () => {
+  const { db, users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  await settings.setWatchlist(user.id, [
+    { symbol: 'tlt', note: '  duration  ', earnings: '' },
+    { symbol: 'NVDA', note: 'semis', earnings: '2026-11-19' },
+    { symbol: 'NVDA', note: 'said twice' },
+    { symbol: 'not a ticker!', note: 'dropped' },
+  ]);
+
+  const list = (await settings.read(user.id)).watchlist;
+  assert.deepEqual(list, [
+    { symbol: 'TLT', note: 'duration', earnings: null },
+    { symbol: 'NVDA', note: 'semis', earnings: '2026-11-19' },
+  ]);
+
+  // The date comes back as the day it was saved. A DATE column read as a JS Date is local
+  // midnight, which is the day before west of UTC — so it is read back with to_char.
+  assert.equal(typeof list[1].earnings, 'string');
+
+  // Reordering is a save like any other, and removes nothing.
+  await settings.setWatchlist(user.id, [list[1], list[0]]);
+  assert.deepEqual(
+    (await settings.read(user.id)).watchlist.map((w) => w.symbol),
+    ['NVDA', 'TLT'],
+  );
+
+  const { rows } = await db.query(`SELECT symbol FROM watchlist WHERE user_id = $1 ORDER BY sort_order`, [user.id]);
+  assert.deepEqual(rows.map((r) => r.symbol), ['NVDA', 'TLT'], 'rows, not a blob');
+});
+
+test('one account cannot see or overwrite another account\'s watchlist', async () => {
+  const { users, settings } = await fresh();
+  const a = await users.create({ email: 'a@b.com', password: GOOD });
+  const b = await users.create({ email: 'b@b.com', password: GOOD });
+
+  await settings.setWatchlist(a.id, [{ symbol: 'GLD', note: 'gold' }]);
+
+  const forB = (await settings.read(b.id)).watchlist;
+  assert.ok(forB.length > 1, "B still has B's own list");
+  assert.ok(forB.some((w) => w.symbol === 'SPY'));
+});
+
+test('a watchlist stored the old way, inside the settings blob, is moved into the table once', async () => {
+  const { db, users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  // Put the database back the way an older version of the app left it: the list buried in the
+  // JSON, the table empty, and the user not yet marked as set up.
+  await db.query(`DELETE FROM watchlist WHERE user_id = $1`, [user.id]);
+  await db.query(`UPDATE users SET watchlist_seeded = FALSE WHERE id = $1`, [user.id]);
+  await db.query(`INSERT INTO settings (user_id, data) VALUES ($1, $2)`, [
+    user.id,
+    JSON.stringify({
+      watchlist: [
+        { symbol: 'QQQ', note: 'tech', earnings: null },
+        { symbol: 'aapl', note: '', earnings: '2026-10-29' },
+        { symbol: 'junk!!', note: 'not a ticker' },
+      ],
+      filters: { minDte: 21 },
+    }),
+  ]);
+
+  await migrate(db);
+
+  assert.deepEqual((await settings.read(user.id)).watchlist, [
+    { symbol: 'QQQ', note: 'tech', earnings: null },
+    { symbol: 'AAPL', note: '', earnings: '2026-10-29' },
+  ]);
+  assert.equal((await settings.read(user.id)).filters.minDte, 21, 'the rest of the settings are untouched');
+
+  const { rows } = await db.query(`SELECT data ? 'watchlist' AS buried FROM settings WHERE user_id = $1`, [user.id]);
+  assert.equal(rows[0].buried, false, 'and the blob copy is gone, so it cannot come back');
+
+  // The move is what runs on every boot. Running it again must not resurrect anything.
+  await settings.setWatchlist(user.id, []);
+  await migrate(db);
+  assert.deepEqual((await settings.read(user.id)).watchlist, []);
+});
+
+test('an account that predates the watchlist table, and never saved settings, keeps the defaults', async () => {
+  const { db, users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  await db.query(`DELETE FROM watchlist WHERE user_id = $1`, [user.id]);
+  await db.query(`UPDATE users SET watchlist_seeded = FALSE WHERE id = $1`, [user.id]);
+
+  await migrate(db);
+
+  const list = (await settings.read(user.id)).watchlist;
+  assert.ok(list.length >= 5, 'they were looking at the defaults, so that is what they keep');
+  assert.equal(list[0].symbol, 'SPY');
 });
 
 test('deleting a user takes their sessions and settings with them', async () => {
@@ -243,6 +346,12 @@ test('deleting a user takes their sessions and settings with them', async () => 
 
   assert.equal((await db.query('SELECT count(*)::int n FROM sessions')).rows[0].n, 0);
   assert.equal((await db.query('SELECT count(*)::int n FROM settings')).rows[0].n, 0);
+  assert.equal(
+    (await db.query('SELECT count(*)::int n FROM watchlist WHERE user_id = $1', [member.id])).rows[0].n,
+    0,
+    'the watchlist cascades too — and the admin still has theirs',
+  );
+  assert.ok((await db.query('SELECT count(*)::int n FROM watchlist')).rows[0].n > 0);
   assert.equal(await users.findById(member.id), undefined);
 });
 

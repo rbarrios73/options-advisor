@@ -8,7 +8,7 @@ import ResultsTable from '../components/ResultsTable.jsx';
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
  * does not throw away a scan — and does not spend another round of provider requests.
  */
-export default function ScreenerPage({ settings, onWatchlist, onFilters, scan }) {
+export default function ScreenerPage({ settings, onFilters, scan }) {
   const [showFilters, setShowFilters] = useState(false);
   const { result, scanning, run } = scan;
 
@@ -35,7 +35,7 @@ export default function ScreenerPage({ settings, onWatchlist, onFilters, scan })
 
       <div className="layout">
         <aside>
-          <Watchlist watchlist={settings.watchlist} onChange={onWatchlist} />
+          <Watchlist watchlist={settings.watchlist} />
 
           {showFilters && (
             <Filters

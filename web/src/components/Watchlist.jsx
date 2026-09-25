@@ -1,64 +1,46 @@
-import { useState } from 'react';
+import { hrefFor } from '../router.js';
 
-export default function Watchlist({ watchlist, onChange }) {
-  const [symbol, setSymbol] = useState('');
-
-  const add = (event) => {
-    event.preventDefault();
-    const clean = symbol.trim().toUpperCase();
-    if (!/^[A-Z.]{1,6}$/.test(clean)) return;
-    if (watchlist.some((w) => w.symbol === clean)) return;
-
-    onChange([...watchlist, { symbol: clean, note: '', earnings: null }]);
-    setSymbol('');
-  };
-
-  const remove = (target) => onChange(watchlist.filter((w) => w.symbol !== target));
-
-  const setEarnings = (target, value) =>
-    onChange(
-      watchlist.map((w) => (w.symbol === target ? { ...w, earnings: value || null } : w)),
-    );
-
+/**
+ * What this scan will look at — read only.
+ *
+ * Editing lives on the Watchlist tab, and only there. Two editors for one list is how a note
+ * typed in one place disappears when the other saves over it; and the thing this panel is for
+ * during a scan is answering "did it include X?", which does not need an input box.
+ */
+export default function Watchlist({ watchlist }) {
   return (
     <section className="panel">
       <h2>Watchlist</h2>
 
-      <form className="inline-row" onSubmit={add}>
-        <input
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          placeholder="Add ticker"
-          aria-label="Add ticker"
-          maxLength={6}
-        />
-        <button type="submit">Add</button>
-      </form>
+      {watchlist.length === 0 ? (
+        <p className="muted">
+          Nothing on the list — a scan has nothing to look at. <a href={hrefFor('watchlist')}>Add a ticker</a>.
+        </p>
+      ) : (
+        <>
+          <ul className="watchlist">
+            {watchlist.map((entry) => (
+              <li key={entry.symbol}>
+                <a className="ticker" href={hrefFor('ticker', { symbol: entry.symbol })}>
+                  {entry.symbol}
+                </a>
 
-      <ul className="watchlist">
-        {watchlist.map((entry) => (
-          <li key={entry.symbol}>
-            <span className="ticker">{entry.symbol}</span>
+                {/* Only the dates that are set, and only as text. An earnings date is the one
+                    field here that changes what the scan reports, so it is worth seeing. */}
+                {entry.earnings && (
+                  <span className="muted small" title="Expiries after this are flagged">
+                    {entry.earnings}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
 
-            {/* No free feed gives a dependable earnings date, so this is entered by hand. Any
-                expiry after it is flagged on the candidate — an earnings print inside the life
-                of a short premium position is the single most common way one goes wrong. */}
-            <input
-              type="date"
-              className="earnings"
-              value={entry.earnings ?? ''}
-              onChange={(e) => setEarnings(entry.symbol, e.target.value)}
-              title="Earnings date (optional) — expiries after this get flagged"
-            />
-
-            <button className="link" onClick={() => remove(entry.symbol)} aria-label={`Remove ${entry.symbol}`}>
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {watchlist.length === 0 && <p className="muted">Add a ticker to scan.</p>}
+          <p className="muted small">
+            <a href={hrefFor('watchlist')}>Edit the watchlist</a>
+          </p>
+        </>
+      )}
     </section>
   );
 }

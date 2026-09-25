@@ -335,6 +335,49 @@ test('watchlists are per account', async (t) => {
   );
 });
 
+test('saving a watchlist tidies it, keeps its order, and answers with what was stored', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const { status, body } = await call('/api/watchlist', {
+    method: 'PUT',
+    body: {
+      watchlist: [
+        { symbol: ' nvda ', note: '  semis  ', earnings: '2026-11-19' },
+        { symbol: 'gld', note: 'gold', earnings: '' },
+        { symbol: 'GLD', note: 'said twice' },
+        { symbol: 'not a ticker', note: 'dropped' },
+      ],
+    },
+  });
+
+  assert.equal(status, 200);
+  assert.deepEqual(body.watchlist, [
+    { symbol: 'NVDA', note: 'semis', earnings: '2026-11-19' },
+    { symbol: 'GLD', note: 'gold', earnings: null },
+  ]);
+
+  // The response is what is stored, not an echo of what was sent — the page replaces its own
+  // optimistic copy with it, so the two cannot drift.
+  assert.deepEqual((await call('/api/settings')).body.watchlist, body.watchlist);
+
+  // And an empty list is a list, not a reason to put the defaults back.
+  await call('/api/watchlist', { method: 'PUT', body: { watchlist: [] } });
+  assert.deepEqual((await call('/api/settings')).body.watchlist, []);
+});
+
+test('an empty or missing watchlist body empties the list rather than erroring', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  assert.equal((await call('/api/watchlist', { method: 'PUT', body: {} })).status, 200);
+  assert.deepEqual((await call('/api/settings')).body.watchlist, []);
+});
+
 test('a scan uses the signed-in account’s own watchlist', async (t) => {
   const s = await startServer();
   t.after(s.close);
@@ -388,6 +431,13 @@ test('quote and history need a session, and reject a nonsense symbol', async (t)
   await call.signIn(ADMIN);
   assert.equal((await call('/api/quote?symbol=not-a-symbol')).status, 400);
   assert.equal((await call('/api/history?symbol=')).status, 400);
+
+  // A ticker the provider does not know is an answer, not a fault. The watchlist page checks a
+  // symbol before adding it, so this is a normal path — a 500 here would fill the console with
+  // red for a typo and hide the faults that matter.
+  const missing = await call('/api/quote?symbol=ZZZZ');
+  assert.equal(missing.status, 404);
+  assert.match(missing.body.error, /ZZZZ/);
 });
 
 test('a quote carries what a ticker page needs to show', async (t) => {

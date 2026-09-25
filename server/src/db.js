@@ -12,6 +12,8 @@
 
 import pg from 'pg';
 
+import { DEFAULT_WATCHLIST } from './domain/watchlist.js';
+
 /**
  * A pool, or null when the app is running without a database.
  *
@@ -77,4 +79,76 @@ export async function migrate(db) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+
+  // The watchlist is rows, not a field inside `settings.data`. It is the one part of a user's
+  // settings that is a list of things rather than a setting — it has an order, each entry has its
+  // own fields, and it is what the scan iterates. As rows it can be read in order, updated one
+  // symbol at a time, and looked at in a SQL console when something is wrong.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS watchlist (
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      symbol     TEXT NOT NULL,
+      note       TEXT NOT NULL DEFAULT '',
+      -- A real DATE, so the database rejects the 31st of February. It is always read back with
+      -- to_char: a DATE arrives in Node as a Date at local midnight, which is the previous day
+      -- west of UTC, and an earnings date that moves by a day is worse than none.
+      earnings   DATE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      added_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, symbol)
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS watchlist_order ON watchlist (user_id, sort_order)`);
+
+  // Marks a user whose list has been set up, so an empty watchlist stays empty. Without it,
+  // "this user has no rows" cannot tell a new account from someone who cleared their list on
+  // purpose, and the defaults would come back on the next restart.
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS watchlist_seeded BOOLEAN NOT NULL DEFAULT FALSE`);
+
+  await moveWatchlistsOutOfSettings(db);
+}
+
+/**
+ * The one-time move from `settings.data.watchlist` to the watchlist table.
+ *
+ * Runs on every boot and does nothing after the first, because it clears the flag it keys off:
+ * the JSON key is deleted once copied, and every user is marked seeded at the end. A list
+ * emptied on purpose afterwards is left alone.
+ */
+async function moveWatchlistsOutOfSettings(db) {
+  const { rows } = await db.query(`SELECT count(*)::int AS n FROM users WHERE watchlist_seeded = FALSE`);
+  if (rows[0].n === 0) return;
+
+  // WITH ORDINALITY keeps the order the list was saved in. Entries are filtered rather than
+  // trusted — this is the app's own data, but a cast error here would fail every boot.
+  await db.query(`
+    INSERT INTO watchlist (user_id, symbol, note, earnings, sort_order)
+    SELECT s.user_id,
+           upper(e.value->>'symbol'),
+           coalesce(e.value->>'note', ''),
+           CASE WHEN e.value->>'earnings' ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN (e.value->>'earnings')::date END,
+           (e.ord - 1)::int
+    FROM settings s
+    JOIN users u ON u.id = s.user_id AND u.watchlist_seeded = FALSE
+    CROSS JOIN LATERAL jsonb_array_elements(s.data->'watchlist') WITH ORDINALITY AS e(value, ord)
+    WHERE jsonb_typeof(s.data->'watchlist') = 'array'
+      AND upper(e.value->>'symbol') ~ '^[A-Z.]{1,6}$'
+    ON CONFLICT (user_id, symbol) DO NOTHING
+  `);
+
+  await db.query(`UPDATE settings SET data = data - 'watchlist' WHERE data ? 'watchlist'`);
+
+  // Anyone who had no saved list was looking at the defaults, so that is what they keep.
+  await db.query(
+    `INSERT INTO watchlist (user_id, symbol, note, sort_order)
+     SELECT u.id, d.symbol, d.note, d.ord
+     FROM users u
+     CROSS JOIN jsonb_to_recordset($1::jsonb) AS d(symbol text, note text, ord int)
+     WHERE u.watchlist_seeded = FALSE
+       AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = u.id)
+     ON CONFLICT (user_id, symbol) DO NOTHING`,
+    [JSON.stringify(DEFAULT_WATCHLIST.map((e, ord) => ({ ...e, ord })))],
+  );
+
+  await db.query(`UPDATE users SET watchlist_seeded = TRUE WHERE watchlist_seeded = FALSE`);
 }

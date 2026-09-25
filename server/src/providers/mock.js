@@ -6,6 +6,7 @@
 // candidates it produces beyond "the pipeline works".
 
 import { normalCdf } from '../domain/math.js';
+import { unknownSymbol } from './errors.js';
 
 const UNIVERSE = {
   SPY: { spot: 552.4, baseIv: 0.14 },
@@ -36,7 +37,7 @@ export function createMockProvider({ today = new Date() } = {}) {
     async getQuote(symbol) {
       const key = symbol.toUpperCase();
       const base = UNIVERSE[key];
-      if (!base) throw new Error(`Mock provider has no data for ${symbol}`);
+      if (!base) throw unknownSymbol(symbol, 'The mock provider');
 
       // The day's numbers and the 52-week range come out of the same generator the chart uses, so
       // the header agrees with the line under it. Walking backwards means the last bar is drawn
@@ -69,7 +70,7 @@ export function createMockProvider({ today = new Date() } = {}) {
     },
 
     async getExpirations(symbol) {
-      if (!UNIVERSE[symbol.toUpperCase()]) throw new Error(`Mock provider has no data for ${symbol}`);
+      if (!UNIVERSE[symbol.toUpperCase()]) throw unknownSymbol(symbol, 'The mock provider');
       // Weeklies out to ~3 months, on Fridays.
       return fridaysAhead(today, 13);
     },
@@ -83,14 +84,14 @@ export function createMockProvider({ today = new Date() } = {}) {
     async getHistory(symbol, { start, end, interval = 'daily' } = {}) {
       const key = symbol.toUpperCase();
       const base = UNIVERSE[key];
-      if (!base) throw new Error(`Mock provider has no data for ${symbol}`);
+      if (!base) throw unknownSymbol(symbol, 'The mock provider');
 
       return buildHistory(key, base, { start, end, interval }, today);
     },
 
     async getChain(symbol, expiration, spot) {
       const base = UNIVERSE[symbol.toUpperCase()];
-      if (!base) throw new Error(`Mock provider has no data for ${symbol}`);
+      if (!base) throw unknownSymbol(symbol, 'The mock provider');
 
       const price = spot ?? base.spot;
       const dte = Math.max(

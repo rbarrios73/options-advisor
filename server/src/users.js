@@ -11,6 +11,8 @@
 import { randomBytes, randomUUID, scrypt, createHash, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
+import { seedWatchlist } from './store.js';
+
 const scryptAsync = promisify(scrypt);
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -135,6 +137,12 @@ export function createUserStore(db, { sessionTtlDays = 30 } = {}) {
           `INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING *`,
           [randomUUID(), clean, hash, role],
         );
+
+        // A new account opens on the default watchlist rather than an empty screener. Done here
+        // because this is the one path every account is created through — the admin route and
+        // the first-boot bootstrap both come this way.
+        await seedWatchlist(db, rows[0].id);
+
         return publicUser(rows[0]);
       } catch (error) {
         // 23505 is unique_violation: the address is already registered.

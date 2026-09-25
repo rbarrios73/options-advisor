@@ -8,6 +8,8 @@
 // and cached by the caller. A watchlist of 20 names across 3 expiries is 60 chain calls; that is
 // why the scan is a button and not a poll.
 
+import { unknownSymbol } from './errors.js';
+
 const SANDBOX_BASE = 'https://sandbox.tradier.com/v1';
 const LIVE_BASE = 'https://api.tradier.com/v1';
 
@@ -49,7 +51,7 @@ export function createTradierProvider({ token, mode = 'sandbox', fetchImpl = fet
     async getQuote(symbol) {
       const data = await call('/markets/quotes', { symbols: symbol, greeks: 'false' });
       const quote = data?.quotes?.quote;
-      if (!quote) throw new Error(`No quote for ${symbol}`);
+      if (!quote) throw unknownSymbol(symbol, 'Tradier');
 
       const q = Array.isArray(quote) ? quote[0] : quote;
       return {

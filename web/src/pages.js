@@ -5,6 +5,7 @@
 
 export const PAGES = {
   screener: { label: 'Screener' },
+  watchlist: { label: 'Watchlist' },
   ticker: { label: 'Ticker' },
   simulator: { label: 'Simulator' },
 

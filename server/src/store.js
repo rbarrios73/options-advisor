@@ -1,37 +1,20 @@
-// Watchlist and saved filters, persisted as one JSON file.
+// Where a user's watchlist and saved filters live.
+//
+// Two stores with one interface. The file store is the single-user mode: everything in one JSON
+// file. The database store is the accounts mode: filters and weights in a `settings` row, and the
+// watchlist in its own table — see the note on that table in db.js for why it is not in the blob.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { DEFAULT_FILTERS } from './domain/strategies.js';
 import { DEFAULT_WEIGHTS } from './domain/score.js';
+import { DEFAULT_WATCHLIST, cleanWatchlist } from './domain/watchlist.js';
 
-// Ten names chosen for two things at once: exposure to different drivers, and option chains deep
-// enough that a four-legged position is fillable. Diversification is the point, but an illiquid
-// chain quietly costs more than a correlated one — on a condor you pay the bid/ask four times.
-//
-// Eight are ETFs, which have no earnings date to gap over; the earnings field is entered by hand,
-// so every single name is a thing you have to remember. The two that are here earn their place by
-// paying enough premium to clear the 15% return-on-risk floor, which the quiet ETFs often cannot.
-//
-// This is the DEFAULT list, not just the current one: Render's free tier has no persistent disk,
-// so the saved file is wiped on every cold start and the app falls back to exactly this.
+// The starting point for a fresh install. On Render's free tier there is no persistent disk, so
+// in single-user mode the saved file is wiped on every cold start and the app falls back to this.
 const DEFAULT_STATE = {
-  watchlist: [
-    { symbol: 'SPY', note: 'US large cap — the deepest options market there is' },
-    { symbol: 'IWM', note: 'US small cap — higher IV than SPY, different economic sensitivity' },
-    { symbol: 'XLF', note: 'Financials — rates and credit' },
-    { symbol: 'XLE', note: 'Energy — crude, largely its own cycle' },
-    { symbol: 'XLV', note: 'Healthcare — defensive, low beta to the index' },
-    { symbol: 'GLD', note: 'Gold — the one that usually rises when equities fall' },
-    { symbol: 'TLT', note: 'Long Treasuries — duration and rate expectations' },
-    { symbol: 'EEM', note: 'Emerging markets — non-US, dollar-sensitive' },
-    { symbol: 'XLY', note: 'Consumer discretionary — the household-spending side of the economy' },
-    // The one single name. High IV means it is usually the only thing here paying enough for a
-    // short spread to clear the 15% return-on-risk floor — and the only one that can gap on an
-    // earnings date, which you have to enter by hand.
-    { symbol: 'NVDA', note: 'Semis — high IV, deepest single-name chain. Set its earnings date' },
-  ],
+  watchlist: DEFAULT_WATCHLIST,
   filters: DEFAULT_FILTERS,
   weights: DEFAULT_WEIGHTS,
 };
@@ -80,39 +63,111 @@ export function createFileStore(file) {
     },
     async setWatchlist(_userId, watchlist) {
       const current = await read();
-      return write({ ...current, watchlist });
+      return write({ ...current, watchlist: cleanWatchlist(watchlist) });
     },
   };
 }
 
 /**
- * Settings in Postgres, one row per user — the accounts mode.
+ * Settings in Postgres — the accounts mode. Filters and weights are one JSONB row per user; the
+ * watchlist is its own table, read in the order it was arranged in.
  *
- * A user with no row yet reads the defaults rather than an empty screen, and the row is written
- * the first time they change anything. New accounts therefore start with the default watchlist.
+ * A user with no settings row reads the default filters rather than an empty screen, and the row
+ * is written the first time they change anything. A user with no watchlist rows has an EMPTY
+ * watchlist, and that is not the same thing: the default list is put there once, when the account
+ * is created (see seedWatchlist), so clearing it is a choice the app respects.
  */
 export function createDbStore(db) {
-  async function read(userId) {
-    const { rows } = await db.query(`SELECT data FROM settings WHERE user_id = $1`, [userId]);
-    return withDefaults(rows[0]?.data);
+  async function readWatchlist(userId) {
+    const { rows } = await db.query(
+      `SELECT symbol, note, to_char(earnings, 'YYYY-MM-DD') AS earnings
+       FROM watchlist WHERE user_id = $1
+       ORDER BY sort_order, symbol`,
+      [userId],
+    );
+    return rows;
   }
 
-  async function write(userId, next) {
+  async function readSettings(userId) {
+    const { rows } = await db.query(`SELECT data FROM settings WHERE user_id = $1`, [userId]);
+
+    // A row written before the watchlist had a table may still carry the key; db.js clears it on
+    // the first boot after the change, and this makes the read safe in either order.
+    const { watchlist: _buried, ...data } = rows[0]?.data ?? {};
+    return withDefaults(data);
+  }
+
+  async function writeSettings(userId, next) {
+    // The watchlist is not part of this row any more. Stripped on the way in as well as on the
+    // way out, so a client that still sends the old shape cannot resurrect the buried copy.
+    const { watchlist: _ignored, ...data } = next;
+
     await db.query(
       `INSERT INTO settings (user_id, data) VALUES ($1, $2)
        ON CONFLICT (user_id) DO UPDATE SET data = $2, updated_at = now()`,
-      [userId, JSON.stringify(next)],
+      [userId, JSON.stringify(data)],
     );
-    return next;
+    return data;
   }
 
   return {
-    read,
-    async update(userId, patch) {
-      return write(userId, { ...(await read(userId)), ...patch });
+    async read(userId) {
+      const [settings, watchlist] = await Promise.all([readSettings(userId), readWatchlist(userId)]);
+      return { ...settings, watchlist };
     },
+
+    async update(userId, patch) {
+      const settings = await writeSettings(userId, { ...(await readSettings(userId)), ...patch });
+      return { ...settings, watchlist: await readWatchlist(userId) };
+    },
+
+    /**
+     * Replaces the list in one statement, so a save is all-or-nothing.
+     *
+     * One statement rather than a transaction on purpose: `db` here may be a pool, and a pool
+     * hands each query whatever connection is free — a BEGIN and its COMMIT can land on different
+     * connections, which is a transaction that silently is not one.
+     */
     async setWatchlist(userId, watchlist) {
-      return write(userId, { ...(await read(userId)), watchlist });
+      const clean = cleanWatchlist(watchlist);
+
+      await db.query(
+        `WITH incoming AS (
+           SELECT * FROM jsonb_to_recordset($2::jsonb)
+             AS x(symbol text, note text, earnings text, sort_order int)
+         ),
+         upserted AS (
+           INSERT INTO watchlist (user_id, symbol, note, earnings, sort_order)
+           SELECT $1, symbol, note, earnings::date, sort_order FROM incoming
+           ON CONFLICT (user_id, symbol) DO UPDATE
+             SET note = EXCLUDED.note, earnings = EXCLUDED.earnings, sort_order = EXCLUDED.sort_order
+           RETURNING 1
+         )
+         DELETE FROM watchlist w
+         WHERE w.user_id = $1
+           AND NOT EXISTS (SELECT 1 FROM incoming i WHERE i.symbol = w.symbol)`,
+        [userId, JSON.stringify(clean.map((entry, sort_order) => ({ ...entry, sort_order })))],
+      );
+
+      return { ...(await readSettings(userId)), watchlist: await readWatchlist(userId) };
     },
   };
+}
+
+/**
+ * Puts the default list in front of a brand-new account, once.
+ *
+ * Called when a user is created, not on every read — so an account that clears its watchlist
+ * keeps it cleared. `watchlist_seeded` is what says it has been done; db.js sets it for accounts
+ * that existed before the watchlist had a table of its own.
+ */
+export async function seedWatchlist(db, userId) {
+  await db.query(
+    `INSERT INTO watchlist (user_id, symbol, note, sort_order)
+     SELECT $1, d.symbol, d.note, d.ord
+     FROM jsonb_to_recordset($2::jsonb) AS d(symbol text, note text, ord int)
+     ON CONFLICT (user_id, symbol) DO NOTHING`,
+    [userId, JSON.stringify(DEFAULT_WATCHLIST.map((entry, ord) => ({ ...entry, ord })))],
+  );
+  await db.query(`UPDATE users SET watchlist_seeded = TRUE WHERE id = $1`, [userId]);
 }

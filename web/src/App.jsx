@@ -5,6 +5,7 @@ import { hrefFor, pagesFor, useRoute } from './router.js';
 import ScreenerPage from './pages/ScreenerPage.jsx';
 import SimulatorPage from './pages/SimulatorPage.jsx';
 import TickerPage from './pages/TickerPage.jsx';
+import WatchlistPage from './pages/WatchlistPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
@@ -58,7 +59,11 @@ export default function App() {
   const saveWatchlist = async (watchlist) => {
     setSettings((s) => ({ ...s, watchlist })); // optimistic: typing should not wait on a round trip
     try {
-      await api.saveWatchlist(watchlist);
+      // The server tidies what it stores — upper-cases, trims, drops duplicates — so the answer
+      // it sends back replaces the optimistic copy. Otherwise the screen keeps showing what was
+      // typed while the database holds something slightly different.
+      const stored = await api.saveWatchlist(watchlist);
+      setSettings((s) => ({ ...s, watchlist: stored.watchlist ?? watchlist }));
     } catch (e) {
       setError(e.message);
     }
@@ -143,6 +148,12 @@ export default function App() {
         <UsersPage me={user} />
       ) : page === 'account' ? (
         <AccountPage me={user} />
+      ) : page === 'watchlist' ? (
+        <WatchlistPage
+          watchlist={settings.watchlist}
+          onWatchlist={saveWatchlist}
+          accounts={session.accounts}
+        />
       ) : page === 'ticker' ? (
         <TickerPage
           key={route.params.symbol ?? ''}
@@ -161,7 +172,6 @@ export default function App() {
       ) : (
         <ScreenerPage
           settings={settings}
-          onWatchlist={saveWatchlist}
           onFilters={saveFilters}
           scan={{ result, scanning, run: runScan }}
         />

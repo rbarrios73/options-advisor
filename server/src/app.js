@@ -24,6 +24,7 @@ import { DEFAULT_FILTERS, STRATEGIES, atmImpliedVol } from './domain/strategies.
 import { DEFAULT_WEIGHTS } from './domain/score.js';
 import { daysBetween } from './domain/math.js';
 import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/history.js';
+import { cleanWatchlist } from './domain/watchlist.js';
 
 /**
  * Builds the Express app.
@@ -68,7 +69,11 @@ export function createApp({ config, db = null }) {
 
   const wrap = (handler) => (req, res) => {
     handler(req, res).catch((error) => {
-      if (error instanceof UserError) return res.status(error.status).json({ error: error.message });
+      // A status on the error means it is an answer, not a fault: an unknown ticker is a 404 and
+      // does not belong in the log next to the things that are actually broken.
+      if (error instanceof UserError || Number.isInteger(error.status)) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error(`${req.method} ${req.path} failed:`, error.message);
       res.status(500).json({ error: error.message });
     });
@@ -206,19 +211,9 @@ export function createApp({ config, db = null }) {
     '/api/watchlist',
     gate,
     wrap(async (req, res) => {
-      const incoming = Array.isArray(req.body?.watchlist) ? req.body.watchlist : [];
-
-      const watchlist = incoming
-        .map((entry) => ({
-          symbol: String(entry.symbol ?? '').trim().toUpperCase(),
-          note: String(entry.note ?? '').slice(0, 200),
-          // Optional, and set by hand: no free feed gives a reliable earnings date, and guessing
-          // one is worse than leaving it blank. If it is set, the scan flags expiries beyond it.
-          earnings: entry.earnings ? String(entry.earnings).slice(0, 10) : null,
-        }))
-        .filter((entry) => /^[A-Z.]{1,6}$/.test(entry.symbol));
-
-      res.json(await store.setWatchlist(currentUserId(req), dedupe(watchlist)));
+      // Validation lives in domain/watchlist.js, which the browser imports too — so the page
+      // refuses a bad ticker for the same reason, in the same words, before the round trip.
+      res.json(await store.setWatchlist(currentUserId(req), cleanWatchlist(req.body?.watchlist)));
     }),
   );
 
@@ -407,11 +402,6 @@ function annotateEarnings(result, watchlist) {
       return { ...c, earningsBeforeExpiry: earnings <= c.expiration ? earnings : null };
     }),
   };
-}
-
-function dedupe(watchlist) {
-  const seen = new Set();
-  return watchlist.filter((w) => (seen.has(w.symbol) ? false : seen.add(w.symbol)));
 }
 
 /**
