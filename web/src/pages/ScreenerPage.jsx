@@ -8,7 +8,7 @@ import ResultsTable from '../components/ResultsTable.jsx';
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
  * does not throw away a scan — and does not spend another round of provider requests.
  */
-export default function ScreenerPage({ settings, onFilters, scan }) {
+export default function ScreenerPage({ settings, onFilters, onActivate, scan }) {
   const [showFilters, setShowFilters] = useState(false);
   const { result, scanning, run } = scan;
 
@@ -23,6 +23,26 @@ export default function ScreenerPage({ settings, onFilters, scan }) {
         </p>
 
         <div className="actions">
+          {/* Which list is about to be scanned, changeable without leaving the page. The scan
+              follows the same choice the Watchlist tab shows, so there is one answer to "what
+              will this scan?" rather than two. */}
+          {settings.watchlists?.length > 1 && (
+            <label className="scan-scope">
+              <span className="muted small">Scanning</span>
+              <select
+                value={settings.activeWatchlistId ?? ''}
+                disabled={scanning}
+                onChange={(event) => onActivate(event.target.value)}
+              >
+                {settings.watchlists.map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.name} ({list.entries.length})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <button className="primary" onClick={() => run()} disabled={scanning}>
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
@@ -35,7 +55,7 @@ export default function ScreenerPage({ settings, onFilters, scan }) {
 
       <div className="layout">
         <aside>
-          <Watchlist watchlist={settings.watchlist} />
+          <Watchlist watchlist={settings.watchlist} name={settings.watchlists?.find((l) => l.id === settings.activeWatchlistId)?.name} />
 
           {showFilters && (
             <Filters

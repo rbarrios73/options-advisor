@@ -593,3 +593,30 @@ table.watchlist-table .earnings { width: 150px; }
 table.watchlist-table .row-actions { flex-wrap: nowrap; }
 table.watchlist-table .row-actions a.link-button { text-decoration: none; white-space: nowrap; }
 table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
+
+/* --- the list switcher ---------------------------------------------------------------------- */
+
+.lists { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.lists .chip { padding: 6px 12px; font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.lists .chip .count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: rgba(139, 148, 158, 0.18);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.lists .chip.on .count { background: rgba(4, 18, 31, 0.22); }
+/* The live list is filled, not merely outlined: on a row of chips an outline reads as "available",
+   and which list the screener is about to scan is not a detail to squint at. */
+.lists .chip.on { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.lists .chip.new { border-style: dashed; color: var(--muted); }
+
+.list-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.list-bar button { padding: 6px 12px; font-size: 13px; }
+.list-name { flex: 0 1 260px; }
+.list-name input { font-weight: 600; font-size: 15px; padding: 6px 10px; }
+
+.scan-scope { display: flex; align-items: center; gap: 8px; }
+.scan-scope select { max-width: 220px; }

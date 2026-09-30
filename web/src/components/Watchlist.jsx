@@ -7,10 +7,12 @@ import { hrefFor } from '../router.js';
  * typed in one place disappears when the other saves over it; and the thing this panel is for
  * during a scan is answering "did it include X?", which does not need an input box.
  */
-export default function Watchlist({ watchlist }) {
+export default function Watchlist({ watchlist, name }) {
   return (
     <section className="panel">
-      <h2>Watchlist</h2>
+      {/* The name, not just "Watchlist": with several lists, which one this is is the thing
+          worth knowing while a scan is running. */}
+      <h2>{name ?? 'Watchlist'}</h2>
 
       {watchlist.length === 0 ? (
         <p className="muted">

@@ -211,9 +211,62 @@ export function createApp({ config, db = null }) {
     '/api/watchlist',
     gate,
     wrap(async (req, res) => {
-      // Validation lives in domain/watchlist.js, which the browser imports too — so the page
-      // refuses a bad ticker for the same reason, in the same words, before the round trip.
+      // The ACTIVE list — this is what the Ticker page's "add to watchlist" and anything that
+      // does not care which list is which writes to. Validation lives in domain/watchlist.js,
+      // which the browser imports too, so the page refuses a bad ticker for the same reason, in
+      // the same words, before the round trip.
       res.json(await store.setWatchlist(currentUserId(req), cleanWatchlist(req.body?.watchlist)));
+    }),
+  );
+
+  // --- watchlists ------------------------------------------------------------------------------
+  //
+  // Every route answers with the whole settings state, the same shape /api/settings returns. The
+  // page then replaces what it has rather than patching it, so a rename, a delete and a change of
+  // active list cannot leave the screen holding a version of the truth the server does not share.
+  //
+  // Ownership is checked in the store, which answers "no such watchlist" for another account's id
+  // rather than "not yours" — otherwise an id becomes a way to find out which ids exist.
+
+  app.post(
+    '/api/watchlists',
+    gate,
+    wrap(async (req, res) => {
+      const entries = cleanWatchlist(req.body?.watchlist);
+      res.json(await store.createWatchlist(currentUserId(req), req.body?.name, entries));
+    }),
+  );
+
+  app.patch(
+    '/api/watchlists/:id',
+    gate,
+    wrap(async (req, res) => {
+      const userId = currentUserId(req);
+      const { id } = req.params;
+
+      // Rename and "make this the active one" are both small changes to the same thing, so they
+      // share a route; either may be sent on its own.
+      if (req.body?.name !== undefined) await store.renameWatchlist(userId, id, req.body.name);
+      if (req.body?.active) await store.setActiveWatchlist(userId, id);
+
+      res.json(await store.read(userId));
+    }),
+  );
+
+  app.put(
+    '/api/watchlists/:id',
+    gate,
+    wrap(async (req, res) => {
+      const entries = cleanWatchlist(req.body?.watchlist);
+      res.json(await store.setWatchlistEntries(currentUserId(req), req.params.id, entries));
+    }),
+  );
+
+  app.delete(
+    '/api/watchlists/:id',
+    gate,
+    wrap(async (req, res) => {
+      res.json(await store.deleteWatchlist(currentUserId(req), req.params.id));
     }),
   );
 

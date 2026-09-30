@@ -13,6 +13,41 @@ export const MAX_SYMBOLS = 40;
 export const MAX_NOTE = 200;
 
 /**
+ * Lists per account, and how long a name may be.
+ *
+ * The cap on lists is not storage — it is the switcher: a dozen named lists is a thing you can
+ * pick from, and fifty is a filing problem the app would then have to solve.
+ */
+export const MAX_LISTS = 12;
+export const MAX_NAME = 40;
+
+/** What the account's first list is called, and what a nameless new one falls back to. */
+export const DEFAULT_LIST_NAME = 'My watchlist';
+
+/**
+ * A list name, tidied — or null if there is nothing left of it.
+ *
+ * Whitespace is collapsed as well as trimmed, so "ETFs   only" and "ETFs only" cannot sit side by
+ * side looking identical. Names are compared case-insensitively elsewhere for the same reason.
+ */
+export function cleanName(name) {
+  const clean = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+  return clean.length > 0 ? clean : null;
+}
+
+/** "ETFs", "ETFs (2)", "ETFs (3)" — a name that does not collide with the ones already taken. */
+export function uniqueName(name, taken) {
+  const used = new Set(taken.map((n) => n.toLowerCase()));
+  if (!used.has(name.toLowerCase())) return name;
+
+  for (let n = 2; n <= MAX_LISTS + 1; n++) {
+    const candidate = `${name} (${n})`.slice(0, MAX_NAME);
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${name} ${Date.now()}`.slice(0, MAX_NAME);
+}
+
+/**
  * Ten names chosen for two things at once: exposure to different drivers, and option chains deep
  * enough that a four-legged position is fillable. Diversification is the point, but an illiquid
  * chain quietly costs more than a correlated one — on a condor you pay the bid/ask four times.

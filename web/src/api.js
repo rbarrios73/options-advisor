@@ -33,6 +33,16 @@ export const api = {
       body: JSON.stringify({ watchlist }),
     }).then(json),
 
+  // Watchlists. Every one of these answers with the whole settings state, so the app replaces
+  // what it holds rather than patching it — a rename and a change of active list arrive together.
+  createWatchlist: (name, watchlist = []) => send('/api/watchlists', 'POST', { name, watchlist }),
+  renameWatchlist: (id, name) => send(`/api/watchlists/${encodeURIComponent(id)}`, 'PATCH', { name }),
+  activateWatchlist: (id) => send(`/api/watchlists/${encodeURIComponent(id)}`, 'PATCH', { active: true }),
+  saveWatchlistEntries: (id, watchlist) =>
+    send(`/api/watchlists/${encodeURIComponent(id)}`, 'PUT', { watchlist }),
+  deleteWatchlist: (id) =>
+    fetch(`/api/watchlists/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json),
+
   saveFilters: (filters, weights) =>
     fetch('/api/filters', {
       method: 'PUT',

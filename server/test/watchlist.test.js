@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_WATCHLIST,
+  MAX_NAME,
   MAX_SYMBOLS,
   SYMBOL_PATTERN,
   cleanEntry,
+  cleanName,
   cleanWatchlist,
+  uniqueName,
 } from '../src/domain/watchlist.js';
 
 test('a ticker is letters and dots, up to six', () => {
@@ -69,4 +72,26 @@ test('the default list is itself valid, and is ten diversified names', () => {
   assert.equal(DEFAULT_WATCHLIST.length, 10);
   assert.equal(new Set(DEFAULT_WATCHLIST.map((e) => e.symbol)).size, 10, 'no duplicates');
   assert.ok(DEFAULT_WATCHLIST.every((e) => e.note), 'every name says why it is there');
+});
+
+// --- list names ---------------------------------------------------------------------------------
+
+test('a list name is trimmed, collapsed and capped, and an empty one is not a name', () => {
+  assert.equal(cleanName('  ETFs  '), 'ETFs');
+  // Collapsed as well as trimmed, so two names cannot sit side by side looking identical.
+  assert.equal(cleanName('ETFs   only'), 'ETFs only');
+  assert.equal(cleanName('a\n\tb'), 'a b');
+  assert.equal(cleanName('x'.repeat(200)).length, MAX_NAME);
+
+  for (const empty of ['', '   ', '\n', null, undefined]) assert.equal(cleanName(empty), null, JSON.stringify(empty));
+});
+
+test('a clashing name gets a number rather than being refused', () => {
+  assert.equal(uniqueName('ETFs', []), 'ETFs');
+  assert.equal(uniqueName('ETFs', ['Other']), 'ETFs');
+
+  // Case-insensitive, because picking between "ETFs" and "etfs" in a switcher is a coin toss.
+  assert.equal(uniqueName('ETFs', ['etfs']), 'ETFs (2)');
+  assert.equal(uniqueName('ETFs', ['ETFs', 'ETFs (2)']), 'ETFs (3)');
+  assert.ok(uniqueName('x'.repeat(MAX_NAME), ['x'.repeat(MAX_NAME)]).length <= MAX_NAME);
 });

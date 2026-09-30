@@ -14,7 +14,7 @@ import PriceChart from '../components/PriceChart.jsx';
  * different questions and fail independently — a symbol with no option chain still has a price,
  * and a fresh listing has a price but almost no history.
  */
-export default function TickerPage({ watchlist = [], onWatchlist, params }) {
+export default function TickerPage({ watchlist = [], listName, onWatchlist, params }) {
   const [symbol, setSymbol] = useState((params.symbol || watchlist[0]?.symbol || 'SPY').toUpperCase());
   const [typed, setTyped] = useState(symbol);
   const [range, setRange] = useState(isRange(params.range) ? params.range : DEFAULT_RANGE);
@@ -140,7 +140,8 @@ export default function TickerPage({ watchlist = [], onWatchlist, params }) {
                   )
                 }
               >
-                {listed ? 'Remove from watchlist' : 'Add to watchlist'}
+                {/* Named, because with several lists "add to watchlist" does not say which. */}
+                {listed ? `Remove from ${listName ?? 'watchlist'}` : `Add to ${listName ?? 'watchlist'}`}
               </button>
             )}
             <a className="button" href={hrefFor('simulator', { symbol })}>

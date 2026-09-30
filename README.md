@@ -143,7 +143,8 @@ This list lives in `DEFAULT_WATCHLIST` in `server/src/domain/watchlist.js`. With
 copied into a new account's own rows, once; without them it is what a saved file falls back to,
 which on a host with an ephemeral disk is what you get after every cold start.
 
-Edit the list on the **Watchlist** tab — add, reorder, annotate, remove.
+Edit it on the **Watchlist** tab — add, reorder, annotate, remove — or keep it as one list
+among several.
 
 A note on high-priced underlyings: a $400 stock with 10-point strike spacing produces nothing at
 the default `maxWidth` of 10, because the narrowest available spread is already at the limit.
@@ -209,8 +210,8 @@ code path runs against Neon, Supabase, Render or a local server.
 - **There is always one administrator.** The last enabled admin cannot be deleted, demoted or
   disabled — including by themselves. Otherwise the app ends up with nobody who can administer it.
 - **Setting a password signs that account out everywhere**, which is usually the point.
-- **Disabling keeps someone's watchlist and ends their sessions immediately.** Deleting removes
-  both — the watchlist rows go with the account, by foreign key — and cannot be undone.
+- **Disabling keeps someone's watchlists and ends their sessions immediately.** Deleting removes
+  both — every list and its symbols go with the account, by foreign key — and cannot be undone.
 - **No password reset email**, because this app sends no mail. An admin sets a new one and tells
   the person. If you lock yourself out of the only admin account, set `ADMIN_RESET=true` for one
   deploy, then turn it off.
@@ -232,11 +233,23 @@ to revisit first.
 
 ## The Watchlist tab
 
-The list every scan looks at, edited properly rather than through a panel in the sidebar.
+Your lists, edited properly rather than through a panel in the sidebar. An account can keep up to
+twelve of them — "ETFs", "earnings plays", whatever you keep apart.
 
-- **Add a ticker** and it is checked against the provider before it goes on the list, so a typo is
-  caught here rather than as a failed symbol in the middle of tomorrow's scan. It can be
-  overridden — a name the provider does not know today may still be one you want.
+**The list you are looking at is the list that gets scanned.** That is deliberately one idea
+rather than two: a page where you edit "ETFs" while the screener quietly scans "earnings plays"
+is a page that will eventually scan the wrong thing without telling you. Picking a list on this
+tab, or from the picker on the Screener, is the same choice.
+
+- **New**, **Duplicate** and **Delete list** sit next to the name, which is edited in place —
+  no dialog for one text field. A new list becomes the live one, because you made it to put
+  something in it. Your last list cannot be deleted; empty it instead.
+- Two lists of one account cannot share a name, case aside. On **create** a clash is resolved —
+  you get "ETFs (2)" — because you asked for a list and should get one. On **rename** it is
+  refused, because you named a specific list and that name is taken.
+- **Add a ticker** and it is checked against the provider before it goes on, so a typo is caught
+  here rather than as a failed symbol in the middle of tomorrow's scan. It can be overridden — a
+  name the provider does not know today may still be one you want.
 - **Order matters** and is yours to set: symbols are scanned top down, and the ↑/↓ buttons move a
   row. Buttons rather than drag-and-drop, because a drag handle cannot be reached from a keyboard
   and is awkward on a phone.
@@ -245,29 +258,41 @@ The list every scan looks at, edited properly rather than through a panel in the
   feed gives a dependable earnings date, which is why it is entered by hand.
 - **Last price per row**, from the same cache a scan uses — so a name that has quietly stopped
   trading shows up here as "no quote" rather than as a failure halfway through a scan.
-- Adding, removing and reordering save as they happen; notes save when you leave the field.
+- Adding, removing and reordering save as they happen; notes and the list name save when you
+  leave the field.
 
-The Screener's sidebar still shows the list, but read-only, with a link here. Two editors for one
-list is how a note typed in one place disappears when the other saves over it.
+Elsewhere the live list simply follows: the Screener names it above the sidebar and offers a
+picker beside the Scan button, and the Ticker page's button reads "Add to ETFs" rather than "Add
+to watchlist", so it always says where a symbol is about to go.
 
 ### Where it is stored
 
-With `DATABASE_URL` set, in its own **`watchlist` table** — one row per account and symbol, with
-the note, the earnings date and the position in the list as columns, and a foreign key that takes
-the rows with the account if it is deleted. Not a JSON blob inside the settings row, which is
-where it used to live: this is a list of things rather than a setting, it has an order, and as
-rows it can be read back in that order and looked at in a SQL console when something is wrong.
+With `DATABASE_URL` set, in two tables. **`watchlists`** is one row per list — name, position,
+the account it belongs to. **`watchlist`** is one row per symbol on a list, with the note, the
+earnings date and the position in that list as columns. Foreign keys take a list's symbols with
+it when it goes, and an account's lists with the account. Not a JSON blob inside the settings row,
+which is where all of this used to live: these are lists of things rather than settings, they have
+an order, and as rows they can be read back in that order and looked at in a SQL console when
+something is wrong.
 
-A watchlist saved by an older version is moved into the table on the first boot after the upgrade,
-in the order it was saved in, and the buried copy is deleted so it cannot come back. That move
-runs on every boot and does nothing after the first.
+Which list is live is a setting, so it does live in the settings row, as `activeWatchlistId`. If
+it ever points at a list that is gone, the first list is used — the server decides that, so the
+browser never has to guess.
 
-A new account starts on the default ten. An **empty list stays empty** — the defaults are put
-there once, when the account is created, not every time the list is read, so clearing it is a
-choice the app respects.
+Two upgrades run themselves on the first boot after deploying, and are no-ops on every boot after:
 
-Without a database it is the same list in the same shape, saved to a JSON file beside the app
-(and, on Render's free tier, wiped on every cold start — which is the argument for the database).
+1. A watchlist saved inside the settings blob moves out into rows, in the order it was saved in,
+   and the buried copy is deleted so it cannot come back.
+2. A single watchlist that hung off the account becomes that account's first list, named **My
+   watchlist** — the same name a new account's first list gets, so nothing appears to have moved.
+
+A new account starts on the default ten, in one list. An **empty list stays empty**, and a deleted
+list stays deleted — the defaults are put there once, when the account is created, not every time
+the list is read.
+
+Without a database it is the same shape saved to a JSON file beside the app (and, on Render's free
+tier, wiped on every cold start — which is the argument for the database). A file written before
+lists were plural is upgraded the same way, the first time it is read.
 
 ## The Ticker tab
 
@@ -345,15 +370,15 @@ server/
     domain/     math.js · metrics.js · strategies.js · score.js    ← all the arithmetic, no I/O
                 pricing.js · simulate.js                           ← Black-Scholes and the simulator
                 history.js · watchlist.js                          ← ranges, series, and what a
-                                                                     watchlist entry is
+                                                                     list and its entries are
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     auth.js     sign-in: basic auth (single user) or session cookies (accounts)
     users.js    accounts, scrypt passwords, sessions
-    db.js       Postgres pool + schema, and the one-time watchlist move
+    db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         123 tests, no network and no database needed
+  test/         133 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · WatchlistPage · TickerPage · SimulatorPage
@@ -390,12 +415,18 @@ that the last bar of the chart is exactly the quote in the header — including 
 and volume, and whichever range was asked for. A chart disagreeing with the number printed above
 it is the bug most worth a test here.
 
-For the watchlist: what counts as a ticker, what a bad earnings date does (dropped, not stored —
+For the watchlists: what counts as a ticker, what a bad earnings date does (dropped, not stored —
 the column is a real DATE and half a date would fail the whole save), duplicates collapsing onto
-the first mention, and the cap. Against a real Postgres: that a new account is seeded once, that
-an emptied list stays empty across a restart, that order survives a round trip, that one account
-cannot see another's, and that a list saved the old way inside the settings blob is moved into the
-table exactly once.
+the first mention, both caps, and how a clashing list name is resolved on create but refused on
+rename. Against a real Postgres: that a new account is seeded once, that an emptied list stays
+empty across a restart, that order survives a round trip, that editing one list leaves the others
+alone, that the last list cannot be deleted, and that one account's list id is not a handle on it
+— a rename, an edit, a delete and a switch all answer "no such watchlist" rather than "not
+yours", so an id cannot be used to find out which ids exist.
+
+Both upgrades are tested by building the old schema and running the migration over it: a list
+buried in the settings blob, and a single list hanging off the account. Each is then run a second
+time, because that is what happens on the next boot.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

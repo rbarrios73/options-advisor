@@ -63,10 +63,30 @@ export default function App() {
       // it sends back replaces the optimistic copy. Otherwise the screen keeps showing what was
       // typed while the database holds something slightly different.
       const stored = await api.saveWatchlist(watchlist);
-      setSettings((s) => ({ ...s, watchlist: stored.watchlist ?? watchlist }));
+      setSettings((s) => ({ ...s, ...stored }));
     } catch (e) {
       setError(e.message);
     }
+  };
+
+  /**
+   * Creating, renaming, switching and deleting a list.
+   *
+   * These THROW rather than swallowing, because each one has a refusal worth reading where the
+   * button is — "this is your only watchlist", "you already have one called that" — and a message
+   * at the top of the page is not an answer to a button at the bottom.
+   *
+   * Every route answers with the whole settings state, so the app replaces what it holds: a
+   * delete changes which list is active as well, and patching one field would miss that.
+   */
+  const watchlists = {
+    create: async (name, entries) => setSettings(await api.createWatchlist(name, entries)),
+    rename: async (id, name) => setSettings(await api.renameWatchlist(id, name)),
+    activate: async (id) => {
+      setSettings(await api.activateWatchlist(id));
+      setResult(null); // another list's scan is not this list's scan
+    },
+    remove: async (id) => setSettings(await api.deleteWatchlist(id)),
   };
 
   const saveFilters = async (filters, weights) => {
@@ -151,13 +171,17 @@ export default function App() {
       ) : page === 'watchlist' ? (
         <WatchlistPage
           watchlist={settings.watchlist}
+          watchlists={settings.watchlists ?? []}
+          activeId={settings.activeWatchlistId}
           onWatchlist={saveWatchlist}
+          lists={watchlists}
           accounts={session.accounts}
         />
       ) : page === 'ticker' ? (
         <TickerPage
           key={route.params.symbol ?? ''}
           watchlist={settings.watchlist}
+          listName={settings.watchlists?.find((l) => l.id === settings.activeWatchlistId)?.name}
           onWatchlist={saveWatchlist}
           params={route.params}
         />
@@ -172,6 +196,7 @@ export default function App() {
       ) : (
         <ScreenerPage
           settings={settings}
+          onActivate={watchlists.activate}
           onFilters={saveFilters}
           scan={{ result, scanning, run: runScan }}
         />

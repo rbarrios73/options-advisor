@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { MAX_SYMBOLS, SYMBOL_PATTERN, cleanEntry } from '@domain/watchlist.js';
+import { MAX_LISTS, MAX_NAME, MAX_SYMBOLS, SYMBOL_PATTERN, cleanEntry } from '@domain/watchlist.js';
 
 import { api } from '../api.js';
 import { hrefFor } from '../router.js';
 import { price as fmtPrice } from '../format.js';
 
 /**
- * The watchlist, edited properly: what gets scanned, in what order, with the notes and earnings
- * dates that the screener leans on.
+ * The watchlists: several named lists, one of them live.
+ *
+ * The list you are editing IS the list that gets scanned. That is deliberately one idea rather
+ * than two — a page where you edit "ETFs" while the screener quietly scans "earnings plays" is a
+ * page that will eventually scan the wrong thing without saying so.
  *
  * Structural edits — add, remove, reorder — save as they happen, because a list that needs a Save
  * button is a list someone will leave unsaved. Text edits save when the field is left, so typing a
  * note is not a request per keystroke.
  */
-export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
+export default function WatchlistPage({ watchlist, watchlists, activeId, onWatchlist, lists, accounts }) {
   const [typed, setTyped] = useState('');
   const [note, setNote] = useState('');
   const [problem, setProblem] = useState(null);
@@ -22,6 +25,10 @@ export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
   const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState(null);
   const [quotes, setQuotes] = useState({});
+  const [listProblem, setListProblem] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const active = watchlists.find((l) => l.id === activeId) ?? watchlists[0] ?? null;
 
   const symbols = watchlist.map((w) => w.symbol).join(',');
 
@@ -55,6 +62,19 @@ export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
     setSaved('saving');
     await onWatchlist(next);
     setSaved('saved');
+  };
+
+  /** Runs one list operation, showing its refusal where the button is rather than at the top. */
+  const run = async (action) => {
+    setBusy(true);
+    setListProblem(null);
+    try {
+      await action();
+    } catch (error) {
+      setListProblem(error.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const add = async (event, force = false) => {
@@ -115,18 +135,76 @@ export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
     <div className="watchlist-page">
       <div className="page-head">
         <p className="muted small">
-          The symbols every scan looks at, in the order they are scanned. Notes are for you; the
-          earnings date is not — set it and the screener flags any expiry that lands after it,
-          which is the most common way a short premium position goes wrong.
+          Keep as many lists as you like — the one you pick here is the one the screener scans.
+          Notes are for you; the earnings date is not — set it and the screener flags any expiry
+          that lands after it, which is the most common way a short premium position goes wrong.
           {accounts
-            ? ' This list is yours: it is stored per account, and nobody else’s changes touch it.'
-            : ' This copy runs without accounts, so the list is saved to a file beside the app.'}
+            ? ' These lists are yours: they are stored per account, and nobody else’s changes touch them.'
+            : ' This copy runs without accounts, so the lists are saved to a file beside the app.'}
         </p>
 
         <p className="muted small" aria-live="polite">
-          {saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : `${watchlist.length} symbols`}
+          {saved === 'saving'
+            ? 'Saving…'
+            : saved === 'saved'
+              ? 'Saved'
+              : `${watchlist.length} ${watchlist.length === 1 ? 'symbol' : 'symbols'}`}
         </p>
       </div>
+
+      <nav className="lists" aria-label="Watchlists">
+        {watchlists.map((list) => (
+          <button
+            key={list.id}
+            type="button"
+            className={list.id === active?.id ? 'chip on' : 'chip'}
+            aria-current={list.id === active?.id ? 'true' : undefined}
+            disabled={busy}
+            onClick={() => list.id !== active?.id && run(() => lists.activate(list.id))}
+          >
+            {list.name} <span className="count">{list.entries.length}</span>
+          </button>
+        ))}
+
+        {watchlists.length < MAX_LISTS && (
+          <button
+            type="button"
+            className="chip new"
+            disabled={busy}
+            onClick={() => run(() => lists.create('New list'))}
+          >
+            + New list
+          </button>
+        )}
+      </nav>
+
+      {active && (
+        <div className="list-bar">
+          <ListName key={active.id} list={active} busy={busy} onRename={(name) => run(() => lists.rename(active.id, name))} />
+
+          <button
+            type="button"
+            disabled={busy || watchlists.length >= MAX_LISTS}
+            onClick={() => run(() => lists.create(`${active.name} copy`, active.entries))}
+            title={watchlists.length >= MAX_LISTS ? `That is the limit of ${MAX_LISTS} watchlists.` : undefined}
+          >
+            Duplicate
+          </button>
+
+          {/* No confirmation dialog: a list is a handful of tickers and a name, the symbols are
+              on screen while you delete it, and the app refuses to delete the last one. */}
+          <button
+            type="button"
+            disabled={busy || watchlists.length === 1}
+            onClick={() => run(() => lists.remove(active.id))}
+            title={watchlists.length === 1 ? 'Your only watchlist — empty it instead.' : undefined}
+          >
+            Delete list
+          </button>
+        </div>
+      )}
+
+      {listProblem && <p className="error small">{listProblem}</p>}
 
       <form className="add-row" onSubmit={add}>
         <label>
@@ -175,7 +253,8 @@ export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
 
       {watchlist.length === 0 ? (
         <p className="muted">
-          Nothing on the list. Add a ticker above — until then a scan has nothing to look at.
+          Nothing on {active ? `“${active.name}”` : 'this list'}. Add a ticker above — until then a
+          scan has nothing to look at.
         </p>
       ) : (
         <div className="scroll-x">
@@ -214,6 +293,44 @@ export default function WatchlistPage({ watchlist, onWatchlist, accounts }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The active list's name, edited in place and saved when the field is left — the same way notes
+ * are edited a few rows below, rather than a dialog for one text field.
+ *
+ * Keyed on the list id by its parent, so switching lists starts the field again rather than
+ * carrying a half-typed name across.
+ */
+function ListName({ list, busy, onRename }) {
+  const [name, setName] = useState(list.name);
+
+  const commit = () => {
+    const wanted = name.trim();
+    if (!wanted || wanted === list.name) {
+      setName(list.name); // an empty name is not a name; put back what it was called
+      return;
+    }
+    onRename(wanted);
+  };
+
+  return (
+    <label className="list-name">
+      <span className="sr-only">Watchlist name</span>
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+          if (event.key === 'Escape') setName(list.name);
+        }}
+        maxLength={MAX_NAME}
+        disabled={busy}
+        aria-label="Watchlist name"
+      />
+    </label>
   );
 }
 

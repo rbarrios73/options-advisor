@@ -368,6 +368,58 @@ test('saving a watchlist tidies it, keeps its order, and answers with what was s
   assert.deepEqual((await call('/api/settings')).body.watchlist, []);
 });
 
+test('the watchlist routes create, rename, switch and delete — and refuse another account\'s list', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+  const hers = (await member('/api/settings')).body.watchlists[0];
+
+  // Create. The answer is the whole state, so the page replaces what it has rather than patching.
+  const made = await admin('/api/watchlists', { method: 'POST', body: { name: 'ETFs', watchlist: [{ symbol: 'gld' }] } });
+  assert.equal(made.status, 200);
+  assert.equal(made.body.watchlists.length, 2);
+
+  const etfs = made.body.watchlists[1];
+  assert.equal(etfs.name, 'ETFs');
+  assert.equal(made.body.activeWatchlistId, etfs.id, 'a new list is the one you are now working in');
+  assert.deepEqual(made.body.watchlist.map((w) => w.symbol), ['GLD']);
+
+  // A scan follows the active list, which is the whole point of having one.
+  const scan = await admin('/api/scan', { method: 'POST', body: {} });
+  assert.deepEqual(scan.body.symbols.map((row) => row.symbol), ['GLD']);
+
+  // Rename, then switch back to the first list.
+  const renamed = await admin(`/api/watchlists/${etfs.id}`, { method: 'PATCH', body: { name: '  index   funds ' } });
+  assert.equal(renamed.body.watchlists[1].name, 'index funds');
+
+  const first = renamed.body.watchlists[0];
+  const switched = await admin(`/api/watchlists/${first.id}`, { method: 'PATCH', body: { active: true } });
+  assert.equal(switched.body.activeWatchlistId, first.id);
+  assert.equal(switched.body.watchlist.length, 10);
+
+  // One account's id is not a handle on another's list — and the answer does not say otherwise.
+  for (const [method, body] of [['PATCH', { name: 'mine' }], ['PUT', { watchlist: [] }], ['DELETE', undefined]]) {
+    const refused = await admin(`/api/watchlists/${hers.id}`, { method, body });
+    assert.equal(refused.status, 404, `${method} another account's list`);
+    assert.equal(refused.body.error, 'No such watchlist.');
+  }
+  assert.equal((await member('/api/settings')).body.watchlist.length, 10, "and hers is untouched");
+
+  // Delete, then find the last one cannot go.
+  const deleted = await admin(`/api/watchlists/${etfs.id}`, { method: 'DELETE' });
+  assert.equal(deleted.body.watchlists.length, 1);
+
+  const lastOne = await admin(`/api/watchlists/${first.id}`, { method: 'DELETE' });
+  assert.equal(lastOne.status, 409);
+  assert.match(lastOne.body.error, /only watchlist/);
+});
+
 test('an empty or missing watchlist body empties the list rather than erroring', async (t) => {
   const s = await startServer();
   t.after(s.close);

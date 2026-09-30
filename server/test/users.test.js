@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 import { migrate } from '../src/db.js';
 import { createDbStore } from '../src/store.js';
+import { MAX_LISTS } from '../src/domain/watchlist.js';
 import {
   UserError,
   createUserStore,
@@ -267,7 +268,11 @@ test('the watchlist is rows: order is kept, entries are tidied, and duplicates c
     ['NVDA', 'TLT'],
   );
 
-  const { rows } = await db.query(`SELECT symbol FROM watchlist WHERE user_id = $1 ORDER BY sort_order`, [user.id]);
+  const { rows } = await db.query(
+    `SELECT w.symbol FROM watchlist w JOIN watchlists l ON l.id = w.watchlist_id
+     WHERE l.user_id = $1 ORDER BY w.sort_order`,
+    [user.id],
+  );
   assert.deepEqual(rows.map((r) => r.symbol), ['NVDA', 'TLT'], 'rows, not a blob');
 });
 
@@ -289,7 +294,7 @@ test('a watchlist stored the old way, inside the settings blob, is moved into th
 
   // Put the database back the way an older version of the app left it: the list buried in the
   // JSON, the table empty, and the user not yet marked as set up.
-  await db.query(`DELETE FROM watchlist WHERE user_id = $1`, [user.id]);
+  await db.query(`DELETE FROM watchlists WHERE user_id = $1`, [user.id]);
   await db.query(`UPDATE users SET watchlist_seeded = FALSE WHERE id = $1`, [user.id]);
   await db.query(`INSERT INTO settings (user_id, data) VALUES ($1, $2)`, [
     user.id,
@@ -324,7 +329,7 @@ test('an account that predates the watchlist table, and never saved settings, ke
   const { db, users, settings } = await fresh();
   const user = await users.create({ email: 'a@b.com', password: GOOD });
 
-  await db.query(`DELETE FROM watchlist WHERE user_id = $1`, [user.id]);
+  await db.query(`DELETE FROM watchlists WHERE user_id = $1`, [user.id]);
   await db.query(`UPDATE users SET watchlist_seeded = FALSE WHERE id = $1`, [user.id]);
 
   await migrate(db);
@@ -332,6 +337,152 @@ test('an account that predates the watchlist table, and never saved settings, ke
   const list = (await settings.read(user.id)).watchlist;
   assert.ok(list.length >= 5, 'they were looking at the defaults, so that is what they keep');
   assert.equal(list[0].symbol, 'SPY');
+});
+
+// --- several watchlists ------------------------------------------------------------------------
+
+test('an account can keep several lists, and the active one is what the app reads', async () => {
+  const { users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  const first = (await settings.read(user.id)).watchlists[0];
+  assert.equal(first.name, 'My watchlist');
+
+  const made = await settings.createWatchlist(user.id, '  earnings   plays  ', [{ symbol: 'nvda' }]);
+  assert.equal(made.watchlists.length, 2);
+  assert.equal(made.watchlists[1].name, 'earnings plays', 'the name is tidied, not stored as typed');
+
+  // A new list becomes the active one — you made it to put something in it — and `watchlist` is
+  // the active list's symbols, which is all the scan and the sidebar ever look at.
+  assert.equal(made.activeWatchlistId, made.watchlists[1].id);
+  assert.deepEqual(made.watchlist.map((w) => w.symbol), ['NVDA']);
+
+  const back = await settings.setActiveWatchlist(user.id, first.id);
+  assert.deepEqual(back.watchlist.map((w) => w.symbol), (await settings.read(user.id)).watchlists[0].entries.map((w) => w.symbol));
+  assert.equal(back.watchlist.length, 10);
+});
+
+test('editing one list leaves the others alone', async () => {
+  const { users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  const state = await settings.createWatchlist(user.id, 'ETFs', [{ symbol: 'SPY' }, { symbol: 'GLD' }]);
+  const [mine, etfs] = state.watchlists;
+
+  await settings.setWatchlistEntries(user.id, etfs.id, [{ symbol: 'TLT', note: 'bonds' }]);
+
+  const after = await settings.read(user.id);
+  assert.deepEqual(after.watchlists.find((l) => l.id === etfs.id).entries.map((w) => w.symbol), ['TLT']);
+  assert.equal(after.watchlists.find((l) => l.id === mine.id).entries.length, 10, 'the other list is untouched');
+});
+
+test('two lists of one account cannot share a name, whatever the case', async () => {
+  const { users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  const a = await settings.createWatchlist(user.id, 'ETFs');
+  // A clash on create is resolved rather than refused: you asked for a list, you get a list.
+  const b = await settings.createWatchlist(user.id, 'etfs');
+  assert.equal(b.watchlists[2].name, 'etfs (2)');
+
+  // A clash on rename IS refused, because you named a specific list and the name is taken.
+  await assert.rejects(
+    () => settings.renameWatchlist(user.id, b.watchlists[2].id, 'ETFS'),
+    (error) => error.status === 409 && /already have a watchlist/.test(error.message),
+  );
+
+  await assert.rejects(() => settings.renameWatchlist(user.id, a.watchlists[1].id, '   '), {
+    message: 'A watchlist needs a name.',
+  });
+});
+
+test('deleting a list takes its symbols, and the last list cannot be deleted', async () => {
+  const { db, users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  const state = await settings.createWatchlist(user.id, 'ETFs', [{ symbol: 'SPY' }, { symbol: 'GLD' }]);
+  const etfs = state.watchlists[1];
+  assert.equal(state.activeWatchlistId, etfs.id);
+
+  const after = await settings.deleteWatchlist(user.id, etfs.id);
+  assert.equal(after.watchlists.length, 1);
+  assert.equal(after.activeWatchlistId, after.watchlists[0].id, 'deleting what was active moves it');
+
+  const { rows } = await db.query(`SELECT count(*)::int n FROM watchlist WHERE watchlist_id = $1`, [etfs.id]);
+  assert.equal(rows[0].n, 0, 'its symbols went with it');
+
+  await assert.rejects(() => settings.deleteWatchlist(user.id, after.watchlists[0].id), {
+    status: 409,
+  });
+});
+
+test('an account cannot name, edit or delete another account\'s list', async () => {
+  const { users, settings } = await fresh();
+  const a = await users.create({ email: 'a@b.com', password: GOOD });
+  const b = await users.create({ email: 'b@b.com', password: GOOD });
+
+  const hers = (await settings.read(b.id)).watchlists[0];
+
+  // "No such watchlist", not "not yours" — otherwise the answer tells you which ids exist.
+  for (const attempt of [
+    () => settings.renameWatchlist(a.id, hers.id, 'mine now'),
+    () => settings.setWatchlistEntries(a.id, hers.id, [{ symbol: 'SPY' }]),
+    () => settings.deleteWatchlist(a.id, hers.id),
+    () => settings.setActiveWatchlist(a.id, hers.id),
+  ]) {
+    await assert.rejects(attempt, (error) => error.status === 404 && error.message === 'No such watchlist.');
+  }
+
+  assert.equal((await settings.read(b.id)).watchlists[0].name, hers.name);
+  assert.equal((await settings.read(b.id)).watchlist.length, 10);
+});
+
+test('there is a limit on how many lists one account can keep', async () => {
+  const { users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+
+  for (let i = 1; i < MAX_LISTS; i++) await settings.createWatchlist(user.id, `list ${i}`);
+  assert.equal((await settings.read(user.id)).watchlists.length, MAX_LISTS);
+
+  await assert.rejects(() => settings.createWatchlist(user.id, 'one too many'), { status: 409 });
+});
+
+test('a database written before lists were plural keeps its symbols, as one named list', async () => {
+  const { db, users, settings } = await fresh();
+  const user = await users.create({ email: 'a@b.com', password: GOOD });
+  await settings.setWatchlist(user.id, [
+    { symbol: 'QQQ', note: 'tech', earnings: '2026-10-29' },
+    { symbol: 'TLT', note: 'bonds' },
+  ]);
+
+  // Put the schema back the way it was before this change: symbols hanging off the user, with no
+  // lists at all. This is the shape a deployed copy of the app is upgrading from.
+  const listId = (await settings.read(user.id)).watchlists[0].id;
+  await db.query(`ALTER TABLE watchlist ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE`);
+  await db.query(`UPDATE watchlist SET user_id = $1 WHERE watchlist_id = $2`, [user.id, listId]);
+  await db.query(`ALTER TABLE watchlist ALTER COLUMN watchlist_id DROP NOT NULL`);
+  await db.query(`UPDATE watchlist SET watchlist_id = NULL`);
+  await db.query(`DELETE FROM watchlists`);
+  await db.query(`DROP INDEX IF EXISTS watchlist_key`);
+
+  await migrate(db);
+
+  const state = await settings.read(user.id);
+  assert.equal(state.watchlists.length, 1);
+  assert.equal(state.watchlists[0].name, 'My watchlist', 'under the name a new account gets, so nothing looks moved');
+  assert.deepEqual(state.watchlist, [
+    { symbol: 'QQQ', note: 'tech', earnings: '2026-10-29' },
+    { symbol: 'TLT', note: 'bonds', earnings: null },
+  ]);
+
+  const { rows } = await db.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name = 'watchlist' AND column_name = 'user_id'`,
+  );
+  assert.equal(rows.length, 0, 'and the old column is gone, so the upgrade cannot run twice');
+
+  // Which is the thing that matters: it runs on every boot from here on.
+  await migrate(db);
+  assert.deepEqual((await settings.read(user.id)).watchlist.map((w) => w.symbol), ['QQQ', 'TLT']);
 });
 
 test('deleting a user takes their sessions and settings with them', async () => {
@@ -347,11 +498,11 @@ test('deleting a user takes their sessions and settings with them', async () => 
   assert.equal((await db.query('SELECT count(*)::int n FROM sessions')).rows[0].n, 0);
   assert.equal((await db.query('SELECT count(*)::int n FROM settings')).rows[0].n, 0);
   assert.equal(
-    (await db.query('SELECT count(*)::int n FROM watchlist WHERE user_id = $1', [member.id])).rows[0].n,
+    (await db.query('SELECT count(*)::int n FROM watchlists WHERE user_id = $1', [member.id])).rows[0].n,
     0,
-    'the watchlist cascades too — and the admin still has theirs',
+    'their lists cascade too — and the admin still has theirs',
   );
-  assert.ok((await db.query('SELECT count(*)::int n FROM watchlist')).rows[0].n > 0);
+  assert.ok((await db.query('SELECT count(*)::int n FROM watchlist')).rows[0].n > 0, "the admin's symbols remain");
   assert.equal(await users.findById(member.id), undefined);
 });
 
