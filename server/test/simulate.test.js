@@ -10,6 +10,7 @@ import {
   breakEvens,
   createLongOption,
   createSpread,
+  pickCallSpread,
   pickLongOption,
   niceStep,
   pickPutSpread,
@@ -41,6 +42,27 @@ async function spreadFor({ symbol = 'SPY', shortDelta = 0.2, width = 5, pricing 
     dte,
     picked,
     spread: createSpread({ ...picked, spot: quote.last, expiration, asOf, atmIv, pricing, ...rest }),
+  };
+}
+
+/** The same, on the call side: sell above the price, buy further above. */
+async function callSpreadFor({ symbol = 'SPY', shortDelta = 0.2, width = 5, pricing = 'conservative', ...rest } = {}) {
+  const quote = await provider.getQuote(symbol);
+  const expirations = await provider.getExpirations(symbol);
+  const expiration = expirations.find((e) => daysBetween(asOf, e) >= 30);
+  const chain = await provider.getChain(symbol, expiration, quote.last);
+
+  const dte = daysBetween(asOf, expiration);
+  const atmIv = atmImpliedVol(chain.options, quote.last);
+  const picked = pickCallSpread(chain, { by: 'delta', shortDelta, width }, { atmIv, years: dte / 365 });
+  assert.ok(!picked.error, picked.error);
+
+  return {
+    chain,
+    atmIv,
+    dte,
+    picked,
+    spread: createSpread({ ...picked, type: 'call', spot: quote.last, expiration, asOf, atmIv, pricing, ...rest }),
   };
 }
 
@@ -395,4 +417,111 @@ test('a far out-of-the-money option is flagged as needing more than the expected
     warnings.some((w) => /expected move/.test(w)),
     `expected a warning, got ${JSON.stringify(warnings)}`,
   );
+});
+
+// --- the call credit spread -------------------------------------------------------------------
+//
+// The mirror of the put spread in every respect, which is the point of these: each one asserts
+// the thing that would be wrong if the side had been copied rather than mirrored.
+
+test('a call spread sells above the price and buys further above', async () => {
+  const { chain, picked, spread } = await callSpreadFor({ shortDelta: 0.2, width: 10 });
+
+  assert.equal(spread.kind, 'call_credit_spread');
+  assert.ok(picked.shortLeg.strike > chain.spot, 'the short call is out of the money, above spot');
+  assert.ok(picked.longLeg.strike > picked.shortLeg.strike, 'protection is bought ABOVE the short call');
+  assert.equal(picked.longLeg.strike - picked.shortLeg.strike, 10, 'width honoured');
+
+  const calls = chain.options.filter((o) => o.type === 'call');
+  const bestGap = Math.min(...calls.map((o) => Math.abs(Math.abs(o.delta) - 0.2)));
+  close(Math.abs(Math.abs(picked.shortLeg.delta) - 0.2), bestGap, 1e-12, 'nearest listed delta');
+});
+
+test('by delta, never picks a short call with nothing above it — and says when it missed', async () => {
+  const chain = {
+    spot: 100,
+    options: [
+      { type: 'call', strike: 110, delta: 0.24, bid: 1.1, ask: 1.18 },
+      { type: 'call', strike: 115, delta: 0.16, bid: 0.6, ask: 0.66 },
+      { type: 'call', strike: 120, delta: 0.1, bid: 0.3, ask: 0.35 },
+    ],
+  };
+
+  // 0.10 sits on the highest strike, which has nothing above it to buy as protection.
+  const picked = pickCallSpread(chain, { by: 'delta', shortDelta: 0.1, width: 5 });
+  assert.ok(!picked.error, picked.error);
+  assert.equal(picked.shortLeg.strike, 115);
+  assert.equal(picked.longLeg.strike, 120);
+  assert.match(picked.note, /closest is 0\.16/);
+
+  const top = Math.max(...chain.options.map((o) => o.strike));
+  assert.match(pickCallSpread(chain, { by: 'strike', shortStrike: top, width: 5 }).error, /Nothing is listed above/);
+});
+
+test('the call spread break-even is ABOVE the short strike — the mirror of the put spread', async () => {
+  const { spread } = await callSpreadFor();
+  const s = summarize(spread);
+
+  close(s.breakEven, spread.short.strike + s.credit, 1e-9, 'short strike plus the credit');
+  assert.ok(s.breakEven > spread.short.strike, 'a credit moves it further out, which is upwards here');
+  assert.ok(s.breakEven > spread.spot, 'and it starts above the current price');
+});
+
+test('at expiry: full credit below the short strike, full loss above the long', async () => {
+  const { spread } = await callSpreadFor();
+  const s = summarize(spread);
+
+  close(pnlAtExpiry(spread, spread.short.strike - 50), s.maxProfit, 1e-9, 'far below');
+  close(pnlAtExpiry(spread, spread.short.strike), s.maxProfit, 1e-9, 'at the short strike');
+  close(pnlAtExpiry(spread, spread.long.strike + 50), -s.maxLoss, 1e-6, 'far above');
+  close(pnlAtExpiry(spread, spread.long.strike), -s.maxLoss, 1e-6, 'at the long strike');
+  close(pnlAtExpiry(spread, s.breakEven), 0, 1e-6, 'at break-even');
+});
+
+test('a call spread is bearish, collects theta and is short vega', async () => {
+  const { spread } = await callSpreadFor();
+  const g = positionGreeks(spread, spread.spot, 0, 0);
+
+  // Bearish: the one sign that flips against the put spread. Everything short-premium does not.
+  assert.ok(g.delta < 0, `delta should be negative, got ${g.delta}`);
+  assert.ok(g.theta > 0, 'time decay is earned, as on any credit spread');
+  assert.ok(g.vega < 0, 'and a jump in vol hurts');
+
+  // Delta is the slope of the P&L, so a dollar up should cost about `delta` dollars.
+  const up = pnlAt(spread, spread.spot + 1, 0, 0) - pnlAt(spread, spread.spot, 0, 0);
+  close(up, g.delta, Math.abs(g.delta) * 0.05 + 0.5, 'delta matches the slope');
+
+  assert.ok(pnlAt(spread, spread.spot, 5, +10) < pnlAt(spread, spread.spot, 5, 0), 'vol up hurts');
+  const half = Math.floor(spread.dte / 2);
+  assert.ok(pnlAt(spread, spread.spot, half) > pnlAt(spread, spread.spot, 0), 'time passing helps');
+});
+
+test('call spread headline numbers are identical to the screener’s for the same legs', async () => {
+  const { spread, picked, atmIv, dte } = await callSpreadFor();
+  const s = summarize(spread);
+
+  const screener = creditSpreadMetrics({
+    ...picked,
+    type: 'call',
+    spot: spread.spot,
+    iv: atmIv,
+    years: Math.max(dte, 0.5) / 365,
+  });
+
+  assert.ok(screener, 'the screener should accept this spread');
+  assert.equal(screener.kind, 'call_credit_spread');
+  for (const key of ['credit', 'maxProfit', 'maxLoss', 'breakEven', 'returnOnRisk', 'probProfit', 'expectedValue']) {
+    assert.equal(s[key], screener[key], key);
+  }
+});
+
+test('a short call below the price is flagged as starting in the money', async () => {
+  const { chain } = await callSpreadFor();
+  const strikes = chain.options.filter((o) => o.type === 'call').map((o) => o.strike).sort((a, b) => a - b);
+  const deepItm = strikes.find((k) => k < chain.spot * 0.95);
+
+  const picked = pickCallSpread(chain, { by: 'strike', shortStrike: deepItm, width: 5 });
+  const spread = createSpread({ ...picked, type: 'call', spot: chain.spot, expiration: chain.expiration, asOf, atmIv: 0.2 });
+
+  assert.match(summarize(spread).warnings.join(' '), /starts in the money/);
 });

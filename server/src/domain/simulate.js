@@ -1,5 +1,10 @@
-// The put credit spread simulator: pick two legs off a chain, then ask what the position is worth
-// at any underlying price, on any date up to expiry, with implied vol moved up or down.
+// The simulator: pick legs off a chain, then ask what the position is worth at any underlying
+// price, on any date up to expiry, with implied vol moved up or down.
+//
+// Four strategies — put and call credit spreads, long calls and long puts — and a position is a
+// list of legs rather than a special case per strategy, so the P&L, the greeks and the chart are
+// one piece of code for all of them. Only the headline numbers at expiry differ by kind, because
+// that is where the shapes genuinely differ.
 //
 // Like pricing.js this runs in the browser, so it is pure and synchronous. The page recomputes
 // the whole curve on every slider tick; at ~250 prices × 2 legs that is well under a millisecond.
@@ -21,9 +26,15 @@ const MIN_VOL = 0.01;
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Picks the short and long put from a chain.
+ * Picks the short and long leg of a vertical credit spread, on either side of the market.
+ *
+ * One function for both sides, because the two are mirror images and writing them twice is how
+ * they drift: a put spread sells below the price and buys further below; a call spread sells
+ * above and buys further above. Everything else — how a target delta is matched to a listed
+ * strike, what happens when the chain cannot get close — is identical, and so is the code.
  *
  * @param {object} chain       { spot, options: [...] } as the providers return it
+ * @param {'put'|'call'} type  which side the spread is built on
  * @param {object} selection
  *   by           'delta' | 'strike'
  *   shortDelta   magnitude, e.g. 0.20 — used when by === 'delta'
@@ -32,48 +43,57 @@ const MIN_VOL = 0.01;
  *   longStrike   optional: an explicit long strike, which overrides width
  * @param {number} atmIv       fallback vol for strikes with no delta of their own
  * @param {number} years       time to expiry, for that fallback
- * @returns {{ shortLeg, longLeg } | { error: string }}
+ * @returns {{ shortLeg, longLeg, note } | { error: string }}
  */
-export function pickPutSpread(chain, selection, { atmIv, years } = {}) {
-  const puts = (chain.options ?? [])
-    .filter((o) => o.type === 'put' && o.strike > 0)
+export function pickVerticalSpread(chain, type, selection, { atmIv, years } = {}) {
+  const put = type === 'put';
+
+  const options = (chain.options ?? [])
+    .filter((o) => o.type === type && o.strike > 0)
     .sort((a, b) => a.strike - b.strike);
 
-  if (puts.length < 2) return { error: 'This expiry has fewer than two put strikes listed.' };
+  if (options.length < 2) {
+    return { error: `This expiry has fewer than two ${type} strikes listed.` };
+  }
+
+  // Protection is bought further from the money: below the short put, above the short call.
+  const protects = (o, shortStrike) => (put ? o.strike < shortStrike : o.strike > shortStrike);
+  const towardsProtection = (strike, width) => (put ? strike - width : strike + width);
+  const side = put ? 'below' : 'above';
 
   let shortLeg;
   let note = null;
 
   if (selection.by === 'strike') {
-    shortLeg = nearest(puts, (o) => Math.abs(o.strike - selection.shortStrike));
+    shortLeg = nearest(options, (o) => Math.abs(o.strike - selection.shortStrike));
   } else {
     const target = Math.abs(selection.shortDelta ?? 0.2);
 
-    // Only strikes with something listed below them can be the short leg of a spread. Without
-    // this, a low target delta on a thin chain lands on the lowest strike and there is no put
+    // Only strikes with something listed beyond them can be the short leg of a spread. Without
+    // this, a low target delta on a thin chain lands on the outermost strike and there is nothing
     // left to buy as protection — the page would show an error where it should show a spread.
-    const eligible = puts.slice(1);
+    const eligible = put ? options.slice(1) : options.slice(0, -1);
 
-    // Only a strike that is listed can be traded, so this picks the listed put nearest the target
-    // delta. Where the feed has no delta for a strike (quiet strikes often lack greeks), it is
-    // computed from that strike's IV, or the at-the-money IV failing that.
+    // Only a strike that is listed can be traded, so this picks the listed contract nearest the
+    // target delta. Where the feed has no delta for a strike (quiet strikes often lack greeks),
+    // it is computed from that strike's IV, or the at-the-money IV failing that.
     const withDelta = eligible
-      .map((o) => ({ o, d: Math.abs(o.delta ?? putDelta(o, chain.spot, years, atmIv)) }))
+      .map((o) => ({ o, d: Math.abs(o.delta ?? optionDelta(type, o, chain.spot, years, atmIv)) }))
       .filter(({ d }) => Number.isFinite(d));
 
     if (withDelta.length === 0) {
       // No deltas and no vol to compute them: fall back to the theoretical strike for the delta.
-      const k = strikeForDelta('put', target, chain.spot, years, atmIv);
+      const k = strikeForDelta(type, target, chain.spot, years, atmIv);
       shortLeg = nearest(eligible, (o) => Math.abs(o.strike - k));
     } else {
       const best = nearest(withDelta, ({ d }) => Math.abs(d - target));
       shortLeg = best.o;
 
       // Say so when the chain cannot get close: a 0.10-delta request filled with a 0.16-delta
-      // put is a materially different trade, and the slider alone would not tell you.
+      // contract is a materially different trade, and the slider alone would not tell you.
       if (Math.abs(best.d - target) > 0.03) {
         note =
-          `No listed put with protection below it is near ${target.toFixed(2)} delta — ` +
+          `No listed ${type} with protection ${side} it is near ${target.toFixed(2)} delta — ` +
           `the closest is ${best.d.toFixed(2)}.`;
       }
     }
@@ -81,17 +101,27 @@ export function pickPutSpread(chain, selection, { atmIv, years } = {}) {
 
   if (!shortLeg) return { error: 'Could not find a short strike.' };
 
-  const below = puts.filter((o) => o.strike < shortLeg.strike);
-  if (below.length === 0) {
-    return { error: `Nothing is listed below ${shortLeg.strike} to buy as protection.` };
+  const beyond = options.filter((o) => protects(o, shortLeg.strike));
+  if (beyond.length === 0) {
+    return { error: `Nothing is listed ${side} ${shortLeg.strike} to buy as protection.` };
   }
 
   const wantedLong =
-    selection.longStrike != null ? selection.longStrike : shortLeg.strike - (selection.width ?? 5);
-  const longLeg = nearest(below, (o) => Math.abs(o.strike - wantedLong));
+    selection.longStrike != null
+      ? selection.longStrike
+      : towardsProtection(shortLeg.strike, selection.width ?? 5);
+  const longLeg = nearest(beyond, (o) => Math.abs(o.strike - wantedLong));
 
   return { shortLeg, longLeg, note };
 }
+
+/** The put credit spread, named because that is what the screener and the old callers ask for. */
+export const pickPutSpread = (chain, selection, context) =>
+  pickVerticalSpread(chain, 'put', selection, context);
+
+/** The call credit spread: sell above the price, buy further above. */
+export const pickCallSpread = (chain, selection, context) =>
+  pickVerticalSpread(chain, 'call', selection, context);
 
 /** A strike's delta from its own IV, for feeds that omit greeks on quiet strikes. */
 function optionDelta(type, option, spot, years, atmIv) {
@@ -99,8 +129,6 @@ function optionDelta(type, option, spot, years, atmIv) {
   if (!(vol > 0) || !(years > 0)) return NaN;
   return bsGreeks(type, spot, option.strike, years, vol).delta;
 }
-
-const putDelta = (option, spot, years, atmIv) => optionDelta('put', option, spot, years, atmIv);
 
 function nearest(items, distance) {
   let best = null;
@@ -171,7 +199,7 @@ const legSign = (leg) => (leg.action === 'sell' ? 1 : -1);
  * is where the shapes genuinely differ (a long call's upside has no ceiling; a spread's does).
  *
  * @param {object} p
- *   kind          'put_credit_spread' | 'long_call' | 'long_put'
+ *   kind          'put_credit_spread' | 'call_credit_spread' | 'long_call' | 'long_put'
  *   legs          options from the chain, each with an `action` of 'buy' or 'sell'
  *   spot          underlying price now
  *   expiration, asOf    ISO dates
@@ -240,16 +268,27 @@ export function createPosition({
   return position;
 }
 
-/** The put credit spread, kept as its own entry point because that is how the screener names it. */
-export function createSpread({ shortLeg, longLeg, ...rest }) {
-  return createPosition({ kind: 'put_credit_spread', legs: [sell(shortLeg), buy(longLeg)], ...rest });
+/**
+ * A vertical credit spread, kept as its own entry point because that is how the screener names
+ * it. `type` is the side it is built on, and defaults to put — which is what every caller that
+ * predates call spreads means.
+ */
+export function createSpread({ shortLeg, longLeg, type = 'put', ...rest }) {
+  return createPosition({
+    kind: type === 'call' ? 'call_credit_spread' : 'put_credit_spread',
+    legs: [sell(shortLeg), buy(longLeg)],
+    ...rest,
+  });
 }
 
 export function createLongOption({ leg, type, ...rest }) {
   return createPosition({ kind: type === 'call' ? 'long_call' : 'long_put', legs: [buy(leg)], ...rest });
 }
 
-export const isCreditStrategy = (position) => position.kind === 'put_credit_spread';
+export const isCreditStrategy = (position) => position.kind.endsWith('_credit_spread');
+
+/** Which side a credit spread is built on — the one thing that mirrors all of its arithmetic. */
+export const spreadType = (position) => (position.kind === 'call_credit_spread' ? 'call' : 'put');
 
 /**
  * The underlying prices where the position breaks even at expiry. One for every strategy here,
@@ -258,7 +297,12 @@ export const isCreditStrategy = (position) => position.kind === 'put_credit_spre
 export function breakEvens(position) {
   const { kind, legs, entry } = position;
 
-  if (kind === 'put_credit_spread') return [position.short.strike - entry.net];
+  // The credit moves the break-even away from the short strike, in the direction the position
+  // wants the price to go: down past a short call, up past a short put.
+  if (isCreditStrategy(position)) {
+    const away = spreadType(position) === 'call' ? 1 : -1;
+    return [position.short.strike + away * entry.net];
+  }
 
   const debit = -entry.net;
   const [leg] = legs;
@@ -321,30 +365,40 @@ export function summarize(position) {
 function creditSpreadShape(position, breakEven) {
   const { short, long, width, spot, atmIv, dte, entry } = position;
   const years = Math.max(dte, 0.5) / DAYS_PER_YEAR;
+  const call = spreadType(position) === 'call';
 
   const credit = entry.net;
   const isCredit = credit > 0;
   const maxLoss = width - credit;
 
+  // A credit spread wins when the price stays on its own side of the break-even: above it for a
+  // put spread, below it for a call spread. Every probability here is that one mirror.
+  const staysClear = (level) =>
+    call ? probabilityBelow(spot, level, atmIv, years) : probabilityAbove(spot, level, atmIv, years);
+  const goesPast = (level) =>
+    call ? probabilityAbove(spot, level, atmIv, years) : probabilityBelow(spot, level, atmIv, years);
+
   const warnings = [];
   if (!isCredit) {
     warnings.push(
-      'At these prices this is not a credit: buying the protection costs as much as the short put pays. ' +
+      `At these prices this is not a credit: buying the protection costs as much as the short ${call ? 'call' : 'put'} pays. ` +
         'Usually a sign of an illiquid strike or a wide quote.',
     );
   } else if (!(maxLoss > 0)) {
     warnings.push('The credit is at least the width of the spread — a quote artefact, not free money.');
   }
-  if (short.strike >= spot) {
-    warnings.push('The short strike is at or above the current price: this put starts in the money.');
+  if (call ? short.strike <= spot : short.strike >= spot) {
+    warnings.push(
+      `The short strike is at or ${call ? 'below' : 'above'} the current price: this ${call ? 'call' : 'put'} starts in the money.`,
+    );
   }
 
   return {
     maxProfit: credit,
     maxLoss,
-    probProfit: isCredit ? probabilityAbove(spot, breakEven, atmIv, years) : null,
-    probMaxProfit: probabilityAbove(spot, short.strike, atmIv, years),
-    probMaxLoss: probabilityBelow(spot, long.strike, atmIv, years),
+    probProfit: isCredit ? staysClear(breakEven) : null,
+    probMaxProfit: staysClear(short.strike),
+    probMaxLoss: goesPast(long.strike),
     warnings,
   };
 }

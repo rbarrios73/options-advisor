@@ -320,14 +320,28 @@ between ranges and symbols does not spend the provider's rate limit twice.
 The third tab. Pick a position off a real chain, then move the date and implied vol to see what
 closing it early would look like — the same idea as TradingView's options builder.
 
-Three strategies: **put credit spread**, **long call**, **long put**. The engine is a list of
-legs, not a special case per strategy, so the P&L, the greeks and the chart are the same code for
-all of them; only the numbers that genuinely differ in shape — max profit, max loss, break-even —
-are worked out per kind.
+Four strategies: **put credit spread**, **call credit spread**, **long call**, **long put**. The
+engine is a list of legs, not a special case per strategy, so the P&L, the greeks and the chart
+are the same code for all of them; only the numbers that genuinely differ in shape — max profit,
+max loss, break-even — are worked out per kind.
+
+The two credit spreads are mirror images, and are written as one piece of code with the side as a
+parameter rather than as two. A put spread sells below the price and buys further below, wins
+above its break-even, and is bullish; a call spread sells above and buys further above, wins
+below its break-even, and is bearish. Everything else — how a target delta is matched to a listed
+strike, the theta it collects, the vega it is short — is identical. Writing them twice is how the
+two drift apart, and how a page ends up saying "finishes above break-even" over a number that
+measured the opposite.
 
 - **Choose the contract by delta or by strike.** By delta, it takes the *listed* contract nearest
   the target, because a strike that does not exist cannot be traded; if the chain cannot get
-  within 0.03 of what you asked for, it says so. On a spread the long leg is set by width.
+  within 0.03 of what you asked for, it says so. On a spread the long leg is set by width, and the
+  widths offered are the distances to strikes that are actually listed on the protective side.
+- **The greeks sit under the chart**, not in the side panel: delta, theta, vega and gamma as four
+  tiles, directly below the date and IV sliders that move them. They were in the side panel, which
+  drops below the P&L table on any window under 1100px — a long scroll from the thing they
+  describe. Each tile says what the number means in money ("$1.84 per day"), because that is the
+  part you can act on.
 - **Entry price**: the price a marketable order gets — the bid/ask on a spread, the ask on a long
   option, which is the screener's convention — or mid, or what you were actually filled at.
 - **Long options read the other way round.** A credit spread collects theta and is short vega; a
@@ -341,7 +355,7 @@ are worked out per kind.
 - **The table** is P&L by price and date. It has rows at exactly today's price, both strikes and
   the break-even, so "what happens at my short strike" gets an exact answer rather than the one
   five dollars away.
-- **Open in simulator** on any put credit spread, long call or long put in the screener carries the
+- **Open in simulator** on any credit spread, long call or long put in the screener carries the
   legs across, and the headline numbers match the screener's to the cent — the simulator runs the
   screener's own `metrics.js` in the browser, and tests hold the two to each other for every
   strategy. Structures the simulator does not cover get no link, rather than a link that would
@@ -353,7 +367,7 @@ Things the model does not know, stated on the page as well:
   that vol; at expiry they are exact.
 - **Dividends are ignored.** A few cents on a 30–45 day SPY spread; more on a high-yield name near
   an ex-date.
-- **Listed options are American.** A deep in-the-money short put can be assigned early. The model
+- **Listed options are American.** A deep in-the-money short leg can be assigned early. The model
   is European and cannot show you that.
 - **Day one is negative**, and that is correct: selling at the bid and buying at the ask puts you
   behind the model value by about the gap to mid the moment you open.
@@ -378,7 +392,7 @@ server/
     db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         133 tests, no network and no database needed
+  test/         140 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · WatchlistPage · TickerPage · SimulatorPage
@@ -408,6 +422,12 @@ For the simulator: Black-Scholes against textbook values, put-call parity, every
 finite difference of the price, the inverse normal against published quantiles, the expiry payoff
 at each kink of every strategy, the sign of each greek (a long option pays theta, a credit spread
 collects it), and the screener and simulator producing identical numbers for the same legs.
+
+The call credit spread has its own set, and each one asserts the thing that would be wrong if the
+side had been copied rather than mirrored: that protection is bought ABOVE the short call, that
+the break-even is above the short strike rather than below it, that the full credit is kept below
+the short strike, and that the position is bearish (negative delta) while still collecting theta
+and being short vega — the one sign that flips, and the three that do not.
 
 For the ticker tab: what each range window means (YTD is the year, not 365 days), that five years
 comes back weekly, that a series summary reports the intraday extremes rather than the closes, and

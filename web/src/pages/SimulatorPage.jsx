@@ -7,6 +7,7 @@ import {
   createSpread,
   isCreditStrategy,
   pickLongOption,
+  pickCallSpread,
   pickPutSpread,
   pnlAt,
   pnlCurve,
@@ -41,6 +42,20 @@ const STRATEGIES = {
     blurb:
       'Sell a put, buy a cheaper one below it for protection. Bullish and defined-risk: you keep ' +
       'the credit if the price stays above the break-even, and the width caps what you can lose.',
+  },
+  call_credit_spread: {
+    label: 'Call credit spread',
+    side: 'call',
+    legs: 2,
+    defaultDelta: 0.2,
+    deltaRange: [0.05, 0.5],
+    strikeLabel: 'Short strike',
+    deltaLabel: 'Short call delta',
+    entryLabels: [['conservative', 'Bid/ask'], ['mid', 'Mid']],
+    blurb:
+      'Sell a call, buy a dearer one above it for protection. Bearish and defined-risk: the ' +
+      'mirror of the put spread, so you keep the credit if the price stays BELOW the break-even, ' +
+      'and the width caps what you can lose.',
   },
   long_call: {
     label: 'Long call',
@@ -99,8 +114,10 @@ export default function SimulatorPage({ watchlist, params }) {
   const [by, setBy] = useState(initialStrike ? 'strike' : 'delta');
   const [targetDelta, setTargetDelta] = useState(num(params.delta) ?? STRATEGIES[initialKind].defaultDelta);
   const [strike, setStrike] = useState(initialStrike);
+  // The width is a distance, so it is the same positive number whichever side the spread is on:
+  // a put spread's long strike is below the short, a call spread's is above.
   const [width, setWidth] = useState(
-    num(params.width) ?? (initialStrike && initialLong ? initialStrike - initialLong : 5),
+    num(params.width) ?? (initialStrike && initialLong ? Math.abs(initialStrike - initialLong) : 5),
   );
 
   // Position.
@@ -181,10 +198,13 @@ export default function SimulatorPage({ watchlist, params }) {
     let picked;
     let position;
 
-    if (kind === 'put_credit_spread') {
-      picked = pickPutSpread(chain, { by, shortDelta: targetDelta, shortStrike: strike, width }, picking);
+    if (strategy.legs === 2) {
+      const type = strategy.side;
+      const pick = type === 'call' ? pickCallSpread : pickPutSpread;
+
+      picked = pick(chain, { by, shortDelta: targetDelta, shortStrike: strike, width }, picking);
       if (picked.error) return { error: picked.error };
-      position = createSpread({ shortLeg: picked.shortLeg, longLeg: picked.longLeg, ...common });
+      position = createSpread({ shortLeg: picked.shortLeg, longLeg: picked.longLeg, type, ...common });
     } else {
       const type = strategy.side;
       picked = pickLongOption(chain, { type, by, delta: targetDelta, strike }, picking);
@@ -214,7 +234,7 @@ export default function SimulatorPage({ watchlist, params }) {
 
     if (by === 'delta') {
       replaceParams('simulator', { ...base, delta: targetDelta, width: p.width ?? undefined });
-    } else if (kind === 'put_credit_spread') {
+    } else if (strategy.legs === 2) {
       replaceParams('simulator', { ...base, short: p.short.strike, long: p.long.strike });
     } else {
       replaceParams('simulator', { ...base, strike: p.legs[0].strike });
@@ -250,7 +270,7 @@ export default function SimulatorPage({ watchlist, params }) {
   // Switching mode starts from the strike currently on screen, so the legs do not jump.
   const switchMode = (next) => {
     if (next === by || !sim?.position) return;
-    const leading = kind === 'put_credit_spread' ? sim.position.short : sim.position.legs[0];
+    const leading = strategy.legs === 2 ? sim.position.short : sim.position.legs[0];
 
     if (next === 'strike') setStrike(leading.strike);
     if (next === 'delta' && leading.delta != null) setTargetDelta(round2(Math.abs(leading.delta)));
@@ -262,15 +282,21 @@ export default function SimulatorPage({ watchlist, params }) {
     [chain, strategy.side],
   );
 
+  // The widths on offer are the distances to strikes that are actually listed on the protective
+  // side — below the short put, above the short call. Offering a width with no strike behind it
+  // would silently round to a different spread than the one the number says.
   const widths = useMemo(() => {
-    if (kind !== 'put_credit_spread' || !sim?.position?.short) return [];
+    if (strategy.legs !== 2 || !sim?.position?.short) return [];
+
     const k = sim.position.short.strike;
+    const beyond = strategy.side === 'put' ? (s) => s < k : (s) => s > k;
+
     return strikes
-      .filter((s) => s < k)
-      .map((s) => round2(k - s))
+      .filter(beyond)
+      .map((s) => round2(Math.abs(k - s)))
       .sort((a, b) => a - b)
       .slice(0, 16);
-  }, [strikes, sim, kind]);
+  }, [strikes, sim, strategy]);
 
   const resetWhatIf = () => {
     setDaysForward(0);
@@ -283,6 +309,13 @@ export default function SimulatorPage({ watchlist, params }) {
   const position = sim?.position;
   const dte = position?.dte ?? chain?.dte ?? 0;
   const credit = Boolean(position) && isCreditStrategy(position);
+
+  // Which way the position wants the price to go. A put credit spread and a long call want it up;
+  // a call credit spread and a long put want it down. Every "above/below" on the page reads from
+  // this one flag rather than re-deriving the direction and getting half of them backwards.
+  const wantsAbove = position
+    ? position.kind === 'put_credit_spread' || position.kind === 'long_call'
+    : true;
   const projectedDate = position ? addDays(position.asOf, sim.daysForward) : null;
   const projectedLabel = position
     ? `${sim.daysForward === 0 ? 'Today' : `${shortDate(projectedDate)} · T+${sim.daysForward}`}${
@@ -398,11 +431,17 @@ export default function SimulatorPage({ watchlist, params }) {
           <label className="control">
             <span>{strategy.strikeLabel}</span>
             <select
-              value={(kind === 'put_credit_spread' ? position?.short.strike : position?.legs[0].strike) ?? ''}
+              value={(strategy.legs === 2 ? position?.short.strike : position?.legs[0].strike) ?? ''}
               onChange={(e) => setStrike(Number(e.target.value))}
             >
-              {/* On a spread, not the lowest strike: the short put needs a listed put below it. */}
-              {(kind === 'put_credit_spread' ? strikes.slice(1) : strikes).map((k) => (
+              {/* On a spread, not the outermost strike: the short leg needs something listed
+                  beyond it to buy as protection — below a put, above a call. */}
+              {(strategy.legs === 2
+                ? strategy.side === 'put'
+                  ? strikes.slice(1)
+                  : strikes.slice(0, -1)
+                : strikes
+              ).map((k) => (
                 <option key={k} value={k}>
                   {price(k)}
                   {chain && inTheMoney(strategy.side, k, chain.spot) ? ' (ITM)' : ''}
@@ -412,7 +451,7 @@ export default function SimulatorPage({ watchlist, params }) {
           </label>
         )}
 
-        {kind === 'put_credit_spread' && (
+        {strategy.legs === 2 && (
           <label className="control">
             <span>Width</span>
             <select
@@ -542,6 +581,31 @@ export default function SimulatorPage({ watchlist, params }) {
                   Reset
                 </button>
               </div>
+
+              {/* The greeks sit here, under the sliders that move them and beside the chart whose
+                  shape they describe — not in the side panel, which drops below the P&L table on
+                  any window under 1100px, a long scroll from the thing it is talking about.
+                  No colour: the sign already says the direction, and red/green is the one pair a
+                  colour-blind reader cannot split. */}
+              <dl className="greeks" aria-label={`Position greeks ${sim.daysForward === 0 && !ivShift ? 'now' : 'at the what-if point'}`}>
+                <Greek
+                  label="Delta"
+                  value={signedNumber(sim.greeks.delta, 1)}
+                  hint="$ per $1 move up"
+                />
+                <Greek label="Theta" value={signedNumber(sim.greeks.theta, 2)} hint="$ per day" />
+                <Greek label="Vega" value={signedNumber(sim.greeks.vega, 2)} hint="$ per IV point" />
+                <Greek label="Gamma" value={signedNumber(sim.greeks.gamma, 3)} hint="delta change per $1" />
+              </dl>
+
+              <p className="muted small greeks-note">
+                {credit
+                  ? 'A credit spread collects theta and is short vega: time passing helps, a jump in implied vol hurts.'
+                  : 'A long option pays theta and is long vega: time passing hurts, a jump in implied vol helps.'}{' '}
+                {sim.daysForward === 0 && !ivShift
+                  ? 'These are the values now.'
+                  : `These are the values at ${projectedLabel}.`}
+              </p>
             </section>
 
             <section className="panel">
@@ -631,21 +695,28 @@ export default function SimulatorPage({ watchlist, params }) {
                   value={price(s.breakEven)}
                   hint={`${movePct(s.breakEven, position.spot)} from spot`}
                 />
+                {/* Which side of a level the position needs is the one thing that mirrors between
+                    a put spread and a call spread. The numbers already mirror; these words have to
+                    as well, or the page states the opposite of what it just computed. */}
                 <Fact
                   label="Win probability"
                   value={pct(s.probProfit)}
-                  hint={`finishes ${credit || position.kind === 'long_call' ? 'above' : 'below'} break-even`}
+                  hint={`finishes ${wantsAbove ? 'above' : 'below'} break-even`}
                 />
                 {credit && (
-                  <Fact label="Keep the full credit" value={pct(s.probMaxProfit)} hint="finishes above short strike" />
+                  <Fact
+                    label="Keep the full credit"
+                    value={pct(s.probMaxProfit)}
+                    hint={`finishes ${wantsAbove ? 'above' : 'below'} short strike`}
+                  />
                 )}
                 <Fact
                   label={credit ? 'Lose the maximum' : 'Expires worthless'}
                   value={pct(s.probMaxLoss)}
                   hint={
                     credit
-                      ? 'finishes below long strike'
-                      : `finishes ${position.kind === 'long_call' ? 'below' : 'above'} the strike`
+                      ? `finishes ${wantsAbove ? 'below' : 'above'} long strike`
+                      : `finishes ${wantsAbove ? 'below' : 'above'} the strike`
                   }
                 />
                 {credit && (
@@ -674,10 +745,6 @@ export default function SimulatorPage({ watchlist, params }) {
                   value={<span className={sim.atSpot >= 0 ? 'pos' : 'neg'}>{signed(Math.round(sim.atSpot))}</span>}
                   hint={`closing at ${price(position.spot)}`}
                 />
-                <Fact label="Delta" value={signedNumber(sim.greeks.delta, 1)} hint="$ per $1 move up" />
-                <Fact label="Theta" value={signedNumber(sim.greeks.theta, 2)} hint="$ per day" />
-                <Fact label="Vega" value={signedNumber(sim.greeks.vega, 2)} hint="$ per IV point" />
-                <Fact label="Gamma" value={signedNumber(sim.greeks.gamma, 3)} hint="delta change per $1" />
               </dl>
 
               {sim.daysForward === 0 && !ivShift && sim.atSpot < 0 && (
@@ -712,6 +779,24 @@ function Tile({ label, value, tone, hint }) {
   );
 }
 
+/**
+ * One greek, as a stat tile: label, the number, and what the number means in money.
+ *
+ * The hint is the point of the tile. "Theta 1.45" is a number; "$1.45 a day" is something you can
+ * act on, and it is the difference between a reader who knows the greeks and one who does not.
+ */
+function Greek({ label, value, hint }) {
+  return (
+    <div className="greek">
+      <dt>{label}</dt>
+      <dd>
+        <span className="greek-value">{value}</span>
+        <span className="greek-hint">{hint}</span>
+      </dd>
+    </div>
+  );
+}
+
 function Fact({ label, value, hint }) {
   return (
     <div>
@@ -729,7 +814,9 @@ function describe(position, chain) {
   const when = shortDate(position.expiration);
 
   if (position.legs.length > 1) {
-    return `${chain.symbol} ${price(position.short.strike)}/${price(position.long.strike)} put spread · ${when}`;
+    // The leg's own type, not a hardcoded "put": a call spread titled "put spread" is a label
+    // that contradicts the chart beneath it.
+    return `${chain.symbol} ${price(position.short.strike)}/${price(position.long.strike)} ${position.short.type} spread · ${when}`;
   }
   const [leg] = position.legs;
   return `${chain.symbol} ${price(leg.strike)} ${leg.type} · ${when}`;

@@ -620,3 +620,31 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
 
 .scan-scope { display: flex; align-items: center; gap: 8px; }
 .scan-scope select { max-width: 220px; }
+
+/* --- the greeks row ------------------------------------------------------------------------- */
+
+/* Four stat tiles rather than a chart: these are four current values, and a chart of four numbers
+   is a chart doing a label's job. No series colour anywhere — the values wear text ink and the
+   sign carries the direction. */
+.greeks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.greek { background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.greek dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.greek dd { margin: 2px 0 0; display: flex; flex-direction: column; gap: 1px; }
+/* Proportional figures, not tabular: these are standalone values, not a column to line up, and
+   tabular digits read loose at this size. */
+.greek-value { font-size: 18px; font-weight: 600; }
+.greek-hint { color: var(--muted); font-size: 10px; }
+
+.greeks-note { margin: 8px 0 0; }
+
+/* Two by two on a phone: four of these in a row would be 60px wide each. */
+@media (max-width: 620px) {
+  .greeks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

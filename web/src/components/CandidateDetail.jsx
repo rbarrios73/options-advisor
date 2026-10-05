@@ -120,14 +120,14 @@ export default function CandidateDetail({ candidate }) {
 }
 
 /**
- * The simulator covers put credit spreads, long calls and long puts. Anything else — a call
- * credit spread, an iron condor — has no link rather than a link to something that would silently
- * show a different position.
+ * The simulator covers both credit spreads, long calls and long puts. Anything else — an iron
+ * condor — has no link rather than a link to something that would silently show a different
+ * position.
  */
 function simulatorLink(c) {
   const base = { symbol: c.symbol, exp: c.expiration, kind: c.kind };
 
-  if (c.kind === 'put_credit_spread') {
+  if (c.kind === 'put_credit_spread' || c.kind === 'call_credit_spread') {
     return hrefFor('simulator', {
       ...base,
       short: c.legs.find((l) => l.action === 'sell')?.strike,
