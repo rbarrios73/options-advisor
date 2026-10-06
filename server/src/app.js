@@ -25,6 +25,8 @@ import { DEFAULT_WEIGHTS } from './domain/score.js';
 import { daysBetween } from './domain/math.js';
 import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/history.js';
 import { cleanWatchlist } from './domain/watchlist.js';
+import { DIGEST_LIMIT } from './domain/advice.js';
+import { createAdvisor } from './advisor.js';
 
 /**
  * Builds the Express app.
@@ -66,6 +68,13 @@ export function createApp({ config, db = null }) {
 
   const provider = createProvider(config);
   const scanner = createScanner({ provider, cacheTtlMs: config.cacheTtlMs });
+
+  // null without a key, which is how every "is the advisor on?" question is answered.
+  const advisor = createAdvisor({
+    apiKey: config.anthropicApiKey,
+    model: config.anthropicModel,
+    fetchImpl: config.fetchImpl ?? fetch,
+  });
 
   const wrap = (handler) => (req, res) => {
     handler(req, res).catch((error) => {
@@ -202,6 +211,7 @@ export function createApp({ config, db = null }) {
         ...state,
         defaults: { filters: DEFAULT_FILTERS, weights: DEFAULT_WEIGHTS },
         provider: provider.name,
+        advisor: advisor ? { model: advisor.model, perHour: config.advisorPerHour } : null,
         user: req.user ?? null,
       });
     }),
@@ -303,6 +313,67 @@ export function createApp({ config, db = null }) {
       });
 
       res.json(annotateEarnings(result, state.watchlist));
+    }),
+  );
+
+  // --- the advisor ------------------------------------------------------------------------------
+  //
+  // Optional, off without ANTHROPIC_API_KEY, and the only part of the app that costs money per
+  // use. It reads a scan THIS SERVER has just run — not numbers posted by the browser — so every
+  // figure it is shown is one the screener computed. See domain/advice.js for what it is told.
+
+  const askedRecently = new Map();
+
+  /** A per-account hourly ceiling. On the bill as much as on the traffic. */
+  function withinRate(userId) {
+    const now = Date.now();
+    const hourAgo = now - 3_600_000;
+
+    const times = (askedRecently.get(userId) ?? []).filter((t) => t > hourAgo);
+    if (times.length >= config.advisorPerHour) return false;
+
+    times.push(now);
+    askedRecently.set(userId, times);
+    return true;
+  }
+
+  app.post(
+    '/api/explain',
+    gate,
+    wrap(async (req, res) => {
+      if (!advisor) {
+        return res.status(503).json({
+          error: 'The advisor is not configured — set ANTHROPIC_API_KEY to turn it on.',
+        });
+      }
+
+      const userId = currentUserId(req);
+      if (!withinRate(userId)) {
+        return res.status(429).json({
+          error: `That is ${config.advisorPerHour} questions this hour, which is the limit. Each one costs money, so the ceiling is deliberate.`,
+        });
+      }
+
+      // The scan is re-run rather than taken from the request. Chains are cached, so this spends
+      // no provider requests; what it buys is that the model reads this server's arithmetic.
+      const state = await store.read(userId);
+      const result = annotateEarnings(
+        await scanner.scan({
+          symbols: state.watchlist.map((w) => w.symbol),
+          filters: state.filters,
+          weights: state.weights,
+          limit: 50,
+        }),
+        state.watchlist,
+      );
+
+      const answer = await advisor.ask({ question: req.body?.question, result });
+
+      res.json({
+        ...answer,
+        asOf: result.asOf,
+        candidatesConsidered: Math.min(result.candidates.length, DIGEST_LIMIT),
+      });
     }),
   );
 

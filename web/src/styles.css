@@ -648,3 +648,39 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
 @media (max-width: 620px) {
   .greeks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* --- ask about the results -------------------------------------------------------------------- */
+
+.ask-panel { margin-top: 16px; max-width: 80ch; }
+.ask-panel h2 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; }
+.ask-panel code { background: #0d1117; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+
+.ask-form { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
+.ask-form textarea {
+  flex: 1 1 auto;
+  background: #0d1117;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  resize: vertical;
+  min-height: 44px;
+}
+.ask-form textarea:focus { outline: none; border-color: var(--accent); }
+.ask-form button { flex: 0 0 auto; }
+
+/* The starting questions: things worth asking, so the box is not a blank stare. They go away once
+   there is an answer, because by then the follow-up is the person's own. */
+.suggestions { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.suggestions .link-button { text-align: left; padding: 3px 0; font-size: 12px; }
+
+.answer { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.answer p { margin: 0 0 10px; }
+.answer .warning { margin: 10px 0; }
+.answer-foot { margin-bottom: 0; }
+
+@media (max-width: 560px) {
+  .ask-form { flex-wrap: wrap; }
+  .ask-form button { width: 100%; }
+}

@@ -231,6 +231,45 @@ That is a reasonable bar for a screener holding a broker **read** token. It is n
 something that can place orders — if this app ever gets a token that can trade, this is the part
 to revisit first.
 
+## Asking about a scan
+
+An optional panel on the Screener that reads the scan you just ran and answers questions about it
+in words. Off until you set `ANTHROPIC_API_KEY`; it is the only part of this app that costs money
+per use.
+
+**What it can do.** Compare the ranked candidates on the dimensions the screener computes — win
+probability, return on risk, expected value, liquidity, days to expiry — and say where two are
+close enough that the ranking between them is noise. It is good at "which of these, and what am I
+trading off", which is a reading problem rather than a forecasting one.
+
+**What it cannot do, by construction.** It sees the digest of your scan and nothing else: no
+chart, no news, nothing about the companies. It is told, in the system prompt, to discuss only
+those rows, never to state a number it was not given, and never to tell you what to trade. Ask it
+what will go up next month and it will say it cannot know — which is the truthful answer, and the
+reason this is worth having rather than a liability.
+
+**Why it is built this way.** The screener's arithmetic is the part of this app you can check: it
+comes from a real chain and there are tests holding it to worked examples. A model asked to pick
+trades would answer just as confidently from nothing, and you could not tell the two apart on
+screen. So the model gets no arithmetic to do — it reads what `metrics.js` computed.
+
+Three things enforce that rather than merely hoping for it:
+
+- **The scan is re-run by the server** when you ask, from its own cache, and digested there. The
+  numbers the model reads are the ones this server computed, not numbers a browser said it had.
+- **The answer is checked back** against the scan. Any ticker in it that is not in your scan is
+  flagged on screen — shown with a warning rather than hidden, because an answer you can judge
+  beats a blank panel.
+- **There is an hourly ceiling** per account (`ADVISOR_PER_HOUR`, 20 by default), which is a limit
+  on the bill as much as on the traffic. A refused question never reaches the API.
+
+Set `ANTHROPIC_MODEL` to pick the model; the current list is at
+<https://platform.claude.com/docs/en/models/overview>. The default is `claude-sonnet-5-5`;
+`claude-haiku-4-5-20251001` costs a fraction of it and is ample for reading twenty-five rows.
+A wrong model id comes back as the API's own message, so one env var fixes it.
+
+It is not advice, and the page says so under every answer.
+
 ## The Watchlist tab
 
 Your lists, edited properly rather than through a panel in the sidebar. An account can keep up to
@@ -385,19 +424,22 @@ server/
                 pricing.js · simulate.js                           ← Black-Scholes and the simulator
                 history.js · watchlist.js                          ← ranges, series, and what a
                                                                      list and its entries are
+                advice.js                                          ← what the model may see, and
+                                                                     how its answer is checked
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
+    advisor.js  the optional model reader — one fetch, no SDK
     auth.js     sign-in: basic auth (single user) or session cookies (accounts)
     users.js    accounts, scrypt passwords, sessions
     db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         140 tests, no network and no database needed
+  test/         161 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · WatchlistPage · TickerPage · SimulatorPage
                 LoginPage · UsersPage · AccountPage
-    components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable · …
+    components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable · AskPanel · …
     router.js   hash routing — a handful of pages do not need a library
 ```
 
@@ -447,6 +489,16 @@ yours", so an id cannot be used to find out which ids exist.
 Both upgrades are tested by building the old schema and running the migration over it: a list
 buried in the settings blob, and a single list hanging off the account. Each is then run a second
 time, because that is what happens on the next boot.
+
+For the advisor: no network, ever — the client takes an injectable `fetch` and the tests pass a
+stub. They cover the digest (that it carries what the table carries, that a missing number reads
+as a dash rather than zero, that it is capped and deterministic), the grounding check catching an
+invented ticker while leaving ordinary capitalised prose alone, the request shape against the
+Messages API, the API's own error message surviving, and — over real HTTP — that the route is off
+without a key, that it digests the signed-in account's own watchlist and not another's, and that
+the hourly ceiling stops a question before it costs anything. The system prompt's four
+prohibitions are pinned by a test, because they are the whole basis of trusting the feature and a
+well-meaning edit that softened them would fail nothing else.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

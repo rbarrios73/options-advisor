@@ -15,6 +15,16 @@ export const STRATEGIES = [
   'long_put',
 ];
 
+/** How each one reads in the UI. Here rather than in the front end, because the server names
+ *  strategies too — in what it hands the advisor to read. One list, one spelling. */
+export const STRATEGY_LABELS = {
+  put_credit_spread: 'Put credit spread',
+  call_credit_spread: 'Call credit spread',
+  iron_condor: 'Iron condor',
+  long_call: 'Long call',
+  long_put: 'Long put',
+};
+
 /**
  * @param {object} chain    { symbol, spot, expiration, options: [...] }
  * @param {object} filters  see DEFAULT_FILTERS

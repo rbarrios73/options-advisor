@@ -56,6 +56,20 @@ services:
       - key: ADMIN_PASSWORD
         generateValue: true
 
+      # --- the advisor on the Screener (optional) ---
+      #
+      # Blank means off, and the page says so. Paste an Anthropic key in the dashboard to turn it
+      # on: this is the one part of the app that costs money per use, so it is opt-in and capped.
+      # The model id is here because the list changes — see
+      # https://platform.claude.com/docs/en/models/overview. claude-haiku-4-5-20251001 is the
+      # cheap option and is ample for reading a table of twenty-five rows.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5-5
+      - key: ADVISOR_PER_HOUR
+        value: "20"
+
       # The single-user password gate, used only while DATABASE_URL is empty. Render generates
       # it on first deploy — read it under Environment. Without it the URL is open to anyone.
       - key: APP_USER

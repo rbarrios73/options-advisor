@@ -53,4 +53,17 @@ export const config = {
   adminReset: process.env.ADMIN_RESET === 'true',
 
   riskFreeRate: Number(process.env.RISK_FREE_RATE ?? 0.04),
+
+  // The optional language-model reader on the Screener. Unset means the feature is off and the
+  // page says so, the same way accounts are off without DATABASE_URL — this is the one part of
+  // the app that costs money per use, so it is opt-in.
+  //
+  // The model id is an env var because the list changes: see
+  // https://platform.claude.com/docs/en/models/overview for what is current. claude-haiku-4-5 is
+  // the cheap option and is ample for reading a table of twenty-five rows.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+  anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
+
+  // Questions per account per hour. A ceiling on the bill as much as on the traffic.
+  advisorPerHour: Number(process.env.ADVISOR_PER_HOUR ?? 20),
 };

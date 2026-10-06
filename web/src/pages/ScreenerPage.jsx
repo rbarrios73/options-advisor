@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Watchlist from '../components/Watchlist.jsx';
 import Filters from '../components/Filters.jsx';
 import ResultsTable from '../components/ResultsTable.jsx';
+import AskPanel from '../components/AskPanel.jsx';
 
 /**
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
@@ -94,6 +95,11 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
                 </p>
               )}
 
+              {/* Above the table rather than below it. A scan can return sixty rows, and a box at
+                  the bottom is a box nobody scrolls to — this sits where your eye lands when the
+                  scan finishes, and the answer appears there too. */}
+              <AskPanel advisor={settings.advisor} hasResult={result.candidates.length > 0} />
+
               {result.candidates.length === 0 ? (
                 <p className="muted">
                   Nothing passed. The filters are the usual culprit — try a lower win probability or
@@ -104,6 +110,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
                   <ResultsTable candidates={result.candidates} />
                 </div>
               )}
+
             </>
           )}
         </section>

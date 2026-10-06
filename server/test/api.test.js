@@ -26,7 +26,28 @@ const baseConfig = {
   adminEmail: ADMIN.email,
   adminPassword: ADMIN.password,
   adminReset: false,
+  advisorPerHour: 20,
 };
+
+/** A stand-in for the Messages API, so these tests never touch the network. */
+function stubAnthropic(reply = 'Candidate 1, SPY, pays the most for its risk.') {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        model: 'stub-model',
+        content: [{ type: 'text', text: reply }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1000, output_tokens: 200 },
+      }),
+    };
+  };
+  fetchImpl.calls = calls;
+  return fetchImpl;
+}
 
 async function startServer(overrides = {}) {
   const db = await PGlite.create();
@@ -470,6 +491,113 @@ test('with no database the app runs single-user behind one shared password', asy
 });
 
 // --- ticker lookup -----------------------------------------------------------------------------
+
+// --- the advisor ------------------------------------------------------------------------------
+
+test('without a key the advisor is off, and says so rather than failing obscurely', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  assert.equal((await call('/api/settings')).body.advisor, null, 'the page can tell it is off');
+
+  const refused = await call('/api/explain', { method: 'POST', body: { question: 'anything' } });
+  assert.equal(refused.status, 503);
+  assert.match(refused.body.error, /ANTHROPIC_API_KEY/);
+});
+
+test('with a key, a question is answered from a scan the SERVER ran', async (t) => {
+  const fetchImpl = stubAnthropic();
+  const s = await startServer({ anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  assert.deepEqual((await call('/api/settings')).body.advisor, { model: 'stub-model', perHour: 20 });
+
+  const { status, body } = await call('/api/explain', {
+    method: 'POST',
+    body: { question: 'Which of these has the best return on risk?' },
+  });
+
+  assert.equal(status, 200);
+  assert.match(body.answer, /Candidate 1/);
+  assert.ok(body.candidatesConsidered > 0);
+  assert.deepEqual(body.ungrounded, []);
+
+  // The decisive one: the digest was built from this server's own scan of this account's
+  // watchlist. Nothing numeric came from the browser, so nothing numeric can be forged there.
+  const [sent] = fetchImpl.calls;
+  assert.match(sent.body.messages[0].content, /<scan>/);
+  assert.match(sent.body.messages[0].content, /Watchlist: /);
+  assert.match(sent.body.messages[0].content, /My question: Which of these has the best return on risk\?/);
+});
+
+test('the advisor answers about the signed-in account’s own watchlist, not somebody else’s', async (t) => {
+  const fetchImpl = stubAnthropic();
+  const s = await startServer({ anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+  await admin('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'GLD' }] } });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+  await member('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'TLT' }] } });
+
+  await admin('/api/explain', { method: 'POST', body: { question: 'q' } });
+  await member('/api/explain', { method: 'POST', body: { question: 'q' } });
+
+  const [forAdmin, forMember] = fetchImpl.calls.map((c) => c.body.messages[0].content);
+  assert.match(forAdmin, /Watchlist: GLD/);
+  assert.match(forMember, /Watchlist: TLT/);
+  assert.doesNotMatch(forMember, /GLD/);
+});
+
+test('the hourly ceiling holds, because every question costs money', async (t) => {
+  const fetchImpl = stubAnthropic();
+  const s = await startServer({
+    anthropicApiKey: 'sk-test',
+    anthropicModel: 'stub-model',
+    advisorPerHour: 2,
+    fetchImpl,
+  });
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await call('/api/explain', { method: 'POST', body: { question: 'q' } })).status, 200, `#${i + 1}`);
+  }
+
+  const stopped = await call('/api/explain', { method: 'POST', body: { question: 'q' } });
+  assert.equal(stopped.status, 429);
+  assert.match(stopped.body.error, /limit/);
+  assert.equal(fetchImpl.calls.length, 2, 'the refused one never reached the API, so it cost nothing');
+});
+
+test('an answer naming a ticker that is not in the scan comes back flagged', async (t) => {
+  const fetchImpl = stubAnthropic('Forget these — buy NVDA calls.');
+  const s = await startServer({ anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+  await call('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'SPY' }] } });
+
+  const { body } = await call('/api/explain', { method: 'POST', body: { question: 'q' } });
+  assert.deepEqual(body.ungrounded, ['NVDA']);
+  assert.match(body.answer, /NVDA/, 'still shown, so the person can judge it');
+});
+
+test('the advisor needs a session like everything else', async (t) => {
+  const s = await startServer({ anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl: stubAnthropic() });
+  t.after(s.close);
+
+  assert.equal((await s.client()('/api/explain', { method: 'POST', body: { question: 'q' } })).status, 401);
+});
 
 test('quote and history need a session, and reject a nonsense symbol', async (t) => {
   const s = await startServer();

@@ -26,6 +26,9 @@ export const api = {
 
   settings: () => fetch('/api/settings').then(json),
 
+  /** One question about the scan the server re-runs from its own cache. */
+  explain: (question) => send('/api/explain', 'POST', { question }),
+
   saveWatchlist: (watchlist) =>
     fetch('/api/watchlist', {
       method: 'PUT',

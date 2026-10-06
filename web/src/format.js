@@ -1,10 +1,6 @@
-export const STRATEGY_LABELS = {
-  put_credit_spread: 'Put credit spread',
-  call_credit_spread: 'Call credit spread',
-  iron_condor: 'Iron condor',
-  long_call: 'Long call',
-  long_put: 'Long put',
-};
+// One definition, in the domain the server shares with the browser — the server names strategies
+// too, in what it hands the advisor to read.
+export { STRATEGY_LABELS } from '@domain/strategies.js';
 
 // Every formatter treats null, undefined and NaN alike as "no value". A NaN reaching the screen
 // as the literal text "NaN" reads as a bug; a dash reads as "not available", which is the truth.
