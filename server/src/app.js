@@ -26,6 +26,13 @@ import { daysBetween } from './domain/math.js';
 import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/history.js';
 import { cleanWatchlist } from './domain/watchlist.js';
 import { DIGEST_LIMIT } from './domain/advice.js';
+import {
+  POSITION_TYPES,
+  breachOf,
+  cleanGoals,
+  daysLeft,
+  premiumTotals,
+} from './domain/positions.js';
 import { createAdvisor } from './advisor.js';
 
 /**
@@ -315,6 +322,126 @@ export function createApp({ config, db = null }) {
       res.json(annotateEarnings(result, state.watchlist));
     }),
   );
+
+  // --- the position tracker ---------------------------------------------------------------------
+  //
+  // What you have actually opened. The stored row is what you typed; the live part — today's
+  // price, the short leg's delta, whether the strike is breached — is fetched here and never
+  // saved, because a saved price is a price that is wrong by tomorrow.
+
+  app.get(
+    '/api/positions',
+    gate,
+    wrap(async (req, res) => {
+      const userId = currentUserId(req);
+      const [positions, state] = await Promise.all([store.listPositions(userId), store.read(userId)]);
+      const asOf = today();
+
+      res.json({
+        asOf,
+        positions: await enrich(positions, asOf),
+        totals: premiumTotals(positions, { today: asOf, goals: state.goals }),
+        goals: state.goals,
+        // Earnings dates are already kept on the watchlist, so the tracker reads them from there
+        // rather than asking for the same date twice.
+        earnings: Object.fromEntries(
+          (state.watchlists ?? []).flatMap((l) => l.entries).filter((e) => e.earnings).map((e) => [e.symbol, e.earnings]),
+        ),
+      });
+    }),
+  );
+
+  app.post(
+    '/api/positions',
+    gate,
+    wrap(async (req, res) => {
+      res.json(await store.addPosition(currentUserId(req), req.body));
+    }),
+  );
+
+  app.patch(
+    '/api/positions/:id',
+    gate,
+    wrap(async (req, res) => {
+      res.json(await store.updatePosition(currentUserId(req), req.params.id, req.body ?? {}));
+    }),
+  );
+
+  app.delete(
+    '/api/positions/:id',
+    gate,
+    wrap(async (req, res) => {
+      await store.deletePosition(currentUserId(req), req.params.id);
+      res.json({ ok: true });
+    }),
+  );
+
+  app.put(
+    '/api/goals',
+    gate,
+    wrap(async (req, res) => {
+      const goals = cleanGoals(req.body?.goals);
+      await store.update(currentUserId(req), { goals });
+      res.json({ goals });
+    }),
+  );
+
+  /**
+   * Attaches today's price and the short leg's live delta to each open position.
+   *
+   * Everything here fails soft, per position: a delisted symbol or an expiry the provider has
+   * dropped should leave one row showing dashes, not empty the whole table. Quotes and chains
+   * come from the scan's cache, so an open tracker costs nothing on top of a scan.
+   */
+  async function enrich(positions, asOf) {
+    const open = positions.filter((p) => p.status === 'open');
+    const symbols = [...new Set(open.map((p) => p.symbol))];
+
+    const quotes = new Map();
+    for (const symbol of symbols) {
+      try {
+        quotes.set(symbol, await scanner.quote(symbol));
+      } catch {
+        quotes.set(symbol, null);
+      }
+    }
+
+    // One chain per distinct symbol-and-expiry, not per row: several spreads on the same expiry
+    // are common, and asking again for each is how a tracker burns a rate limit on page load.
+    const chains = new Map();
+    const wanted = [...new Set(open.map((p) => `${p.symbol}|${p.expiration}`))].slice(0, 25);
+
+    for (const key of wanted) {
+      const [symbol, expiration] = key.split('|');
+      try {
+        chains.set(key, (await scanner.chain(symbol, expiration)).chain);
+      } catch {
+        chains.set(key, null);
+      }
+    }
+
+    return positions.map((position) => {
+      const quote = quotes.get(position.symbol) ?? null;
+      const spot = quote?.last ?? null;
+      const chain = chains.get(`${position.symbol}|${position.expiration}`) ?? null;
+
+      const side = POSITION_TYPES[position.type]?.side;
+      const leg =
+        chain && position.shortStrike > 0 && side && side !== 'both'
+          ? (chain.options ?? []).find((o) => o.type === side && Math.abs(o.strike - position.shortStrike) < 0.001)
+          : null;
+
+      return {
+        ...position,
+        spot,
+        change: quote?.change ?? null,
+        changePct: quote?.changePct ?? null,
+        delta: leg?.delta ?? null,
+        daysLeft: daysLeft(position.expiration, asOf),
+        breach: spot == null ? null : breachOf(position, spot),
+      };
+    });
+  }
 
   // --- the advisor ------------------------------------------------------------------------------
   //

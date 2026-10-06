@@ -684,3 +684,78 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
   .ask-form { flex-wrap: wrap; }
   .ask-form button { width: 100%; }
 }
+
+/* ============================================================================================
+   Positions tracker
+   ============================================================================================ */
+
+.positions-page { min-width: 0; }
+
+/* --- goals ------------------------------------------------------------------------------- */
+
+.goals { max-width: 1000px; }
+.goals-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.goals-head h2 { margin: 0; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; }
+.goals-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 12px; }
+
+.goal-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+@media (max-width: 760px) { .goal-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.goal { display: flex; flex-direction: column; gap: 3px; background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.goal-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+/* Proportional figures: a standalone value, not a column to line up. */
+.goal-value { font-size: 20px; font-weight: 600; }
+.goal-hint { font-size: 10px; color: var(--muted); }
+
+/* One value against one limit. The unfilled track is a lighter step of the same hue, so the
+   state reads across the whole bar rather than from the fill alone. */
+.meter { display: block; height: 5px; border-radius: 3px; background: rgba(57, 135, 229, 0.18); overflow: hidden; margin: 3px 0 1px; }
+.meter-fill { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+
+/* --- the add form --------------------------------------------------------------------------- */
+
+.add-position { margin: 14px 0; }
+.position-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 14px 0; }
+.form-actions { display: flex; gap: 8px; align-items: center; }
+
+/* --- the table ------------------------------------------------------------------------------ */
+
+.positions-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 18px 0 8px; }
+.positions-head h2 { margin: 0; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; }
+
+table.positions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.positions-table caption { caption-side: bottom; text-align: left; padding-top: 8px; }
+table.positions-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; white-space: nowrap; }
+table.positions-table th.num { text-align: right; }
+table.positions-table td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+table.positions-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+.warn-text { color: var(--warn); }
+
+/* A breached short strike gets a rule down the side of the row — the spreadsheet's yellow fill,
+   but as an edge rather than a wash, so the numbers keep their contrast. */
+tr.pos-breached td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+tr.pos-closed td, tr.pos-rolled td, tr.pos-assigned td { opacity: 0.62; }
+
+.badge {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* Each tone carries a word as well as a colour, so none of them is colour alone. */
+.tone-new   { border-color: var(--good); color: var(--good); }
+.tone-done  { border-color: var(--accent); color: var(--accent); }
+.tone-muted { border-color: var(--muted); color: var(--muted); }
+.tone-warn  { border-color: var(--warn); color: var(--warn); }
+.tone-watch { border-color: var(--series-2); color: var(--series-2); }
+
+tr.settle-row td { background: #0d1117; white-space: normal; }
+.settle-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 4px 0; }
+.settle-form .segmented button { padding: 5px 11px; font-size: 12px; }
+.settle-form p { flex-basis: 100%; margin: 0; }

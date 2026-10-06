@@ -91,7 +91,15 @@ async function startServer(overrides = {}) {
     return call;
   };
 
-  return { client, base, db, users: built.users, close: () => server.close() };
+  // The database is closed as well as the server. Each test spins up its own in-process Postgres,
+  // and leaving them open leaked one per test until the whole file was killed for memory —
+  // which reads as a mysterious SIGKILL rather than as a failing assertion.
+  const close = async () => {
+    server.close();
+    await db.close();
+  };
+
+  return { client, base, db, users: built.users, close };
 }
 
 // --- the gate --------------------------------------------------------------------------------
@@ -491,6 +499,176 @@ test('with no database the app runs single-user behind one shared password', asy
 });
 
 // --- ticker lookup -----------------------------------------------------------------------------
+
+// --- the position tracker -----------------------------------------------------------------------
+
+const POSITION = {
+  symbol: 'SPY',
+  type: 'VPCS',
+  account: 'Fidelity IRA',
+  contracts: 2,
+  shortStrike: 535,
+  longStrike: 530,
+  expiration: '2026-11-06',
+  tradeDate: '2026-10-01',
+  premium: 138,
+};
+
+test('a position is stored, listed back, and carries today’s price and the short leg’s delta', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const made = await call('/api/positions', { method: 'POST', body: POSITION });
+  assert.equal(made.status, 200);
+  assert.ok(made.body.id);
+  assert.equal(made.body.symbol, 'SPY');
+
+  const { body } = await call('/api/positions');
+  assert.equal(body.positions.length, 1);
+
+  const [row] = body.positions;
+  assert.equal(row.premium, 138);
+  assert.equal(row.contracts, 2);
+
+  // The live half — fetched per request, never stored, so it cannot go stale in the database.
+  assert.ok(row.spot > 0, 'a price came back');
+  assert.equal(typeof row.daysLeft, 'number');
+  assert.ok(row.breach, 'and a verdict on the short strike');
+  assert.ok(['clear', 'near', 'breached'].includes(row.breach.level));
+});
+
+test('the tracker survives a symbol the provider has never heard of', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  await call('/api/positions', { method: 'POST', body: POSITION });
+  await call('/api/positions', { method: 'POST', body: { ...POSITION, symbol: 'ZZZZ' } });
+
+  // One dead ticker must leave one row showing dashes, not empty the whole table.
+  const { status, body } = await call('/api/positions');
+  assert.equal(status, 200);
+  assert.equal(body.positions.length, 2);
+
+  const dead = body.positions.find((p) => p.symbol === 'ZZZZ');
+  assert.equal(dead.spot, null);
+  assert.equal(dead.breach, null);
+  assert.ok(body.positions.find((p) => p.symbol === 'SPY').spot > 0, 'the good row is unaffected');
+});
+
+test('a position that is not a position is refused', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  for (const bad of [{}, { symbol: 'SPY' }, { ...POSITION, type: 'NONSENSE' }, { ...POSITION, expiration: 'soon' }]) {
+    assert.equal((await call('/api/positions', { method: 'POST', body: bad })).status, 400, JSON.stringify(bad));
+  }
+});
+
+test('settling a position banks its premium against the goals', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const { body: made } = await call('/api/positions', { method: 'POST', body: POSITION });
+
+  const before = (await call('/api/positions')).body.totals;
+  assert.equal(before.month.net, 0, 'an open credit is at risk, not banked');
+  assert.equal(before.openPremium, 138);
+
+  const today = new Date().toISOString().slice(0, 10);
+  await call(`/api/positions/${made.id}`, {
+    method: 'PATCH',
+    body: { status: 'closed', closedAt: today, premium: 138 },
+  });
+
+  const after = (await call('/api/positions')).body.totals;
+  assert.equal(after.today.net, 138);
+  assert.equal(after.month.net, 138);
+  assert.equal(after.openPremium, 0);
+  assert.equal(after.today.goal, 450, 'the default daily target');
+});
+
+test('goals are saved per account and drive the progress figures', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const saved = await call('/api/goals', { method: 'PUT', body: { goals: { daily: 900, weekly: 4500, monthly: 18000 } } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.goals.daily, 900);
+
+  assert.equal((await call('/api/positions')).body.goals.daily, 900, 'and it survives a reload');
+  assert.equal((await call('/api/settings')).body.goals.weekly, 4500);
+});
+
+test('one account cannot see, change or delete another’s positions', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+  const { body: mine } = await admin('/api/positions', { method: 'POST', body: POSITION });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+
+  assert.deepEqual((await member('/api/positions')).body.positions, [], 'a new account starts empty');
+
+  // "No such position", not "not yours" — an id is not a way to find out which ids exist.
+  for (const [method, body] of [['PATCH', { status: 'closed' }], ['DELETE', undefined]]) {
+    const refused = await member(`/api/positions/${mine.id}`, { method, body });
+    assert.equal(refused.status, 404, method);
+    assert.equal(refused.body.error, 'No such position.');
+  }
+
+  assert.equal((await admin('/api/positions')).body.positions.length, 1, 'and it is untouched');
+});
+
+test('deleting a user takes their positions with them', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+  await member('/api/positions', { method: 'POST', body: POSITION });
+
+  const { body: users } = await admin('/api/users');
+  const id = users.users.find((u) => u.email === MEMBER.email).id;
+  await admin(`/api/users/${id}`, { method: 'DELETE' });
+
+  // Nothing to assert against the member's own view — the account is gone. The cascade is what
+  // stops their rows outliving them, and users.test.js holds the schema side of that.
+  assert.equal((await admin('/api/positions')).body.positions.length, 0);
+});
+
+test('the tracker needs a session like everything else', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const anon = s.client();
+
+  for (const [path, method] of [
+    ['/api/positions', 'GET'],
+    ['/api/positions', 'POST'],
+    ['/api/positions/anything', 'PATCH'],
+    ['/api/positions/anything', 'DELETE'],
+    ['/api/goals', 'PUT'],
+  ]) {
+    assert.equal((await anon(path, { method, body: method === 'GET' ? undefined : {} })).status, 401, `${method} ${path}`);
+  }
+});
 
 // --- the advisor ------------------------------------------------------------------------------
 

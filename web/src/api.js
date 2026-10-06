@@ -29,6 +29,14 @@ export const api = {
   /** One question about the scan the server re-runs from its own cache. */
   explain: (question) => send('/api/explain', 'POST', { question }),
 
+  // The tracker. The GET carries the live part — prices, deltas, breaches — which is computed
+  // per request and never stored.
+  positions: () => fetch('/api/positions').then(json),
+  addPosition: (position) => send('/api/positions', 'POST', position),
+  updatePosition: (id, changes) => send(`/api/positions/${encodeURIComponent(id)}`, 'PATCH', changes),
+  deletePosition: (id) => fetch(`/api/positions/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json),
+  saveGoals: (goals) => send('/api/goals', 'PUT', { goals }),
+
   saveWatchlist: (watchlist) =>
     fetch('/api/watchlist', {
       method: 'PUT',

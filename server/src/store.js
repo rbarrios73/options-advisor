@@ -23,6 +23,7 @@ import {
   cleanWatchlist,
   uniqueName,
 } from './domain/watchlist.js';
+import { cleanGoals, cleanPosition, sortPositions } from './domain/positions.js';
 
 /** Raised by either store when a request is refused for a reason worth telling the user. */
 export class StoreError extends Error {
@@ -46,6 +47,9 @@ export function withDefaults(stored) {
   return {
     filters: { ...DEFAULT_FILTERS, ...(stored?.filters ?? {}) },
     weights: { ...DEFAULT_WEIGHTS, ...(stored?.weights ?? {}) },
+    // Premium targets for the tracker. A setting rather than a table: three numbers that change
+    // once a year, not a list of things.
+    goals: cleanGoals(stored?.goals),
   };
 }
 
@@ -81,7 +85,7 @@ export function createFileStore(file) {
     try {
       cache = upgradeFile(JSON.parse(await readFile(file, 'utf8')));
     } catch {
-      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {} };
+      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {}, positions: [] };
     }
     return cache;
   }
@@ -175,6 +179,41 @@ export function createFileStore(file) {
       find(raw, id);
       return save({ ...raw, activeId: id });
     },
+
+    // --- the position tracker ---------------------------------------------------------------
+
+    async listPositions() {
+      return sortPositions((await load()).positions ?? []);
+    },
+
+    async addPosition(_userId, raw) {
+      const clean = cleanPosition(raw);
+      if (!clean) throw new StoreError('That is not a position I can store — check the symbol, type and expiry.', 400);
+
+      const state = await load();
+      const position = { id: randomUUID(), ...clean };
+      await save({ ...state, positions: [...(state.positions ?? []), position] });
+      return position;
+    },
+
+    async updatePosition(_userId, id, changes) {
+      const state = await load();
+      const existing = (state.positions ?? []).find((p) => p.id === id);
+      if (!existing) throw new StoreError('No such position.', 404);
+
+      const clean = cleanPosition({ ...existing, ...changes });
+      if (!clean) throw new StoreError('That change would leave the position unusable.', 400);
+
+      const position = { id, ...clean };
+      await save({ ...state, positions: state.positions.map((p) => (p.id === id ? position : p)) });
+      return position;
+    },
+
+    async deletePosition(_userId, id) {
+      const state = await load();
+      if (!(state.positions ?? []).some((p) => p.id === id)) throw new StoreError('No such position.', 404);
+      await save({ ...state, positions: state.positions.filter((p) => p.id !== id) });
+    },
   };
 }
 
@@ -193,6 +232,7 @@ function upgradeFile(stored) {
       })),
       activeId: stored.activeId ?? null,
       settings: stored.settings ?? {},
+      positions: (stored.positions ?? []).map((p) => ({ id: p.id ?? randomUUID(), ...cleanPosition(p) })).filter((p) => p.symbol),
     };
   }
 
@@ -201,6 +241,7 @@ function upgradeFile(stored) {
     lists: [newList(DEFAULT_LIST_NAME, watchlist ?? DEFAULT_WATCHLIST)],
     activeId: null,
     settings: { ...rest, filters, weights },
+    positions: [],
   };
 }
 
@@ -405,7 +446,88 @@ export function createDbStore(db) {
       await writeSettings(userId, { ...(await readSettings(userId)), activeWatchlistId: id });
       return state(userId);
     },
+
+    // --- the position tracker ---------------------------------------------------------------
+    //
+    // Dates are read back with to_char and money with ::float8, for the same reason the watchlist
+    // does it: a DATE arrives in Node as a Date at local midnight (the previous day west of UTC),
+    // and NUMERIC arrives as a string, which silently concatenates when you add it up.
+
+    async listPositions(userId) {
+      const { rows } = await db.query(
+        `SELECT id, symbol, type, status, account, contracts,
+                short_strike::float8  AS "shortStrike",
+                long_strike::float8   AS "longStrike",
+                to_char(expiration, 'YYYY-MM-DD') AS expiration,
+                to_char(trade_date, 'YYYY-MM-DD') AS "tradeDate",
+                premium::float8          AS premium,
+                assignment_loss::float8  AS "assignmentLoss",
+                to_char(closed_at, 'YYYY-MM-DD') AS "closedAt",
+                to_char(rolled_to_expiration, 'YYYY-MM-DD') AS "rolledToExpiration",
+                rolled_to_short_strike::float8 AS "rolledToShortStrike",
+                note
+         FROM positions WHERE user_id = $1`,
+        [userId],
+      );
+      return sortPositions(rows);
+    },
+
+    async addPosition(userId, raw) {
+      const clean = cleanPosition(raw);
+      if (!clean) throw new StoreError('That is not a position I can store — check the symbol, type and expiry.', 400);
+
+      const id = randomUUID();
+      await db.query(
+        `INSERT INTO positions (id, user_id, symbol, type, status, account, contracts, short_strike,
+                                long_strike, expiration, trade_date, premium, assignment_loss,
+                                closed_at, rolled_to_expiration, rolled_to_short_strike, note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        [id, userId, ...columnsOf(clean)],
+      );
+
+      return { id, ...clean };
+    },
+
+    async updatePosition(userId, id, changes) {
+      const { rows } = await db.query(
+        `SELECT 1 FROM positions WHERE id = $1 AND user_id = $2`,
+        [id, userId],
+      );
+      if (rows.length === 0) throw new StoreError('No such position.', 404);
+
+      // Read-modify-write through cleanPosition rather than a partial UPDATE: a patch that only
+      // sets `status` still has to be validated against the rest of the row, and this is one
+      // small row rather than a hot path.
+      const existing = (await this.listPositions(userId)).find((p) => p.id === id);
+      const clean = cleanPosition({ ...existing, ...changes });
+      if (!clean) throw new StoreError('That change would leave the position unusable.', 400);
+
+      await db.query(
+        `UPDATE positions SET symbol=$3, type=$4, status=$5, account=$6, contracts=$7,
+                short_strike=$8, long_strike=$9, expiration=$10, trade_date=$11, premium=$12,
+                assignment_loss=$13, closed_at=$14, rolled_to_expiration=$15,
+                rolled_to_short_strike=$16, note=$17
+         WHERE id=$1 AND user_id=$2`,
+        [id, userId, ...columnsOf(clean)],
+      );
+
+      return { id, ...clean };
+    },
+
+    async deletePosition(userId, id) {
+      const { rowCount } = await db.query(`DELETE FROM positions WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!rowCount) throw new StoreError('No such position.', 404);
+    },
   };
+}
+
+/** The column order both the insert and the update use, so the two cannot drift apart. */
+function columnsOf(p) {
+  return [
+    p.symbol, p.type, p.status, p.account, p.contracts,
+    p.shortStrike, p.longStrike, p.expiration, p.tradeDate, p.premium,
+    p.assignmentLoss, p.closedAt, p.rolledToExpiration, p.rolledToShortStrike, p.note,
+  ];
 }
 
 /**

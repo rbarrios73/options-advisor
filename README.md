@@ -333,6 +333,39 @@ Without a database it is the same shape saved to a JSON file beside the app (and
 tier, wiped on every cold start — which is the argument for the database). A file written before
 lists were plural is upgraded the same way, the first time it is read.
 
+## The Positions tab
+
+The trades you have on, replacing the spreadsheet most option sellers keep. Columns follow that
+sheet — account, symbol, contracts, type, short and long strike, delta, expiry, current price,
+earnings, premium — with one difference that is the point of moving it into the app.
+
+**What is fetched, and what is typed.** Current price, the short leg's live delta, days left, and
+whether the short strike is breached are pulled from the same chain data the screener uses, every
+time the page loads. Everything else — the account, the fill, the dates — is typed, because
+nothing can derive what your broker filled you at. A hand-coloured "in the money" cell is only as
+current as the last time somebody looked, and the day it changes is the day it matters.
+
+**Breach is computed on the right side.** A put structure is in trouble when the price falls *to*
+the short strike; a call structure when it rises to it. Within 2% counts as "near strike". A
+settled row is never flagged, because the colour is about what to do today.
+
+**Status is a label, not just a colour** — Open, Rolled, Closed, Assigned, each a word as well as
+a tint, so none of it is colour alone. Status and risk are kept on separate axes: a position can
+be open and fine or open and breached, and the spreadsheet's single colour column could not say
+both.
+
+**Premium counts when it is realised, not when it is collected.** Only closed and assigned
+positions move a goal, on the date they were settled. A credit on a position still open is money
+at risk, so it is shown separately and labelled as such — a goal that can go backwards is a goal
+nobody trusts. An assignment loss comes off the net and is reported on its own.
+
+Targets are yours to set (daily, weekly, monthly; $450 / $2,250 / $9,000 to begin with), the week
+runs Monday to Sunday, and settling a position asks for the date rather than assuming today —
+otherwise anything entered on a Monday morning quietly lands in the wrong week.
+
+Each account has its own tracker, in its own table, with a foreign key that takes the rows with
+the account if it is deleted.
+
 ## The Ticker tab
 
 Look up one symbol: what it costs now, and what it has done — the price page a screener sends
@@ -426,6 +459,7 @@ server/
                                                                      list and its entries are
                 advice.js                                          ← what the model may see, and
                                                                      how its answer is checked
+                positions.js                                       ← the tracker: breach, goals
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     advisor.js  the optional model reader — one fetch, no SDK
@@ -434,10 +468,11 @@ server/
     db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         161 tests, no network and no database needed
+  test/         182 tests, no network and no database needed
 web/
   src/
-    pages/      ScreenerPage · WatchlistPage · TickerPage · SimulatorPage
+    pages/      ScreenerPage · WatchlistPage · PositionsPage · TickerPage
+                SimulatorPage
                 LoginPage · UsersPage · AccountPage
     components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable · AskPanel · …
     router.js   hash routing — a handful of pages do not need a library
@@ -499,6 +534,13 @@ without a key, that it digests the signed-in account's own watchlist and not ano
 the hourly ceiling stops a question before it costs anything. The system prompt's four
 prohibitions are pinned by a test, because they are the whole basis of trusting the feature and a
 well-meaning edit that softened them would fail nothing else.
+
+For the tracker: breach detection on both sides (a put is breached when the price falls to the
+strike, a call when it rises to it), that a settled row is never flagged, that only realised
+premium moves a goal and only on the day it was settled, that an assignment loss comes off the
+net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
+real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
+an account cannot see or change another's positions, and that every route needs a session.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

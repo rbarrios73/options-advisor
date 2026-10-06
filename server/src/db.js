@@ -136,6 +136,38 @@ export async function migrate(db) {
     [DEFAULT_LIST_NAME],
   );
 
+  // Positions you have actually opened — the tracker. Separate from watchlists on purpose: a
+  // watchlist is a list of names to look at, a position is a trade with money in it, a lifecycle
+  // and a date it was realised. One table would have meant half the columns null on every row.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS positions (
+      id             TEXT PRIMARY KEY,
+      user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      symbol         TEXT NOT NULL,
+      type           TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'open',
+      account        TEXT NOT NULL DEFAULT '',
+      contracts      INTEGER NOT NULL DEFAULT 1,
+      short_strike   NUMERIC,
+      long_strike    NUMERIC,
+      expiration     DATE NOT NULL,
+      trade_date     DATE,
+      -- Dollars for the whole position, as the broker's fill shows it. NUMERIC, not float:
+      -- money summed into a goal total should not drift by a cent per row.
+      premium        NUMERIC,
+      assignment_loss NUMERIC,
+      closed_at      DATE,
+      rolled_to_expiration  DATE,
+      rolled_to_short_strike NUMERIC,
+      note           TEXT NOT NULL DEFAULT '',
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS positions_user ON positions (user_id, status, expiration)`);
+  // The goal totals read by date, and a month of rows is a small scan, but this is the one query
+  // that runs on every page load.
+  await db.query(`CREATE INDEX IF NOT EXISTS positions_closed ON positions (user_id, closed_at)`);
+
   await moveWatchlistsOutOfSettings(db);
 }
 
