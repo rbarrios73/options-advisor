@@ -9,12 +9,43 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-    <!-- Dark by design, and saying so stops the browser painting a white frame around the app
-         before the stylesheet lands. -->
-    <meta name="color-scheme" content="dark" />
+    <!-- Either way round, so the browser paints its own frame to match whichever the viewer gets
+         rather than committing to one before the stylesheet lands. -->
+    <meta name="color-scheme" content="dark light" />
+
+    <!-- Declared ahead of the script below, which rewrites it: a querySelector cannot find a tag
+         the parser has not reached yet. -->
     <meta name="theme-color" content="#0f1216" />
 
     <title>Option Advisor</title>
+
+    <!--
+      The theme, stamped BEFORE anything renders.
+
+      Deliberately inline, synchronous and ahead of the module script: the app's own code runs
+      after the first paint, so reading the preference there would show the default theme for a
+      frame and then flip it — the white flash every themed site is judged by. This is the one
+      place in the app where a blocking script earns its keep.
+
+      It duplicates a few lines of theme.js on purpose. Importing a module here would make it
+      async again, which is the whole problem.
+    -->
+    <script>
+      (function () {
+        try {
+          var choice = localStorage.getItem('oa-theme');
+          var dark =
+            choice === 'dark' ||
+            ((choice !== 'light') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0f1216' : '#f4f6f8');
+        } catch (e) {
+          // Storage blocked, or no matchMedia. The stylesheet's own default takes over, which is
+          // dark — the same thing this app has always looked like.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

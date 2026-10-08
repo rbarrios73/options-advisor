@@ -500,6 +500,41 @@ test('with no database the app runs single-user behind one shared password', asy
 
 // --- ticker lookup -----------------------------------------------------------------------------
 
+test('the appearance preference is kept on the account, and junk falls back', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  assert.equal((await call('/api/settings')).body.theme, 'system', 'a new account defers to the machine');
+
+  assert.equal((await call('/api/theme', { method: 'PUT', body: { theme: 'light' } })).body.theme, 'light');
+  assert.equal((await call('/api/settings')).body.theme, 'light', 'and it survives a reload');
+
+  // Nothing downstream guards, so an unknown value has to land somewhere paintable.
+  await call('/api/theme', { method: 'PUT', body: { theme: 'neon' } });
+  assert.equal((await call('/api/settings')).body.theme, 'system');
+
+  assert.equal((await s.client()('/api/theme', { method: 'PUT', body: { theme: 'dark' } })).status, 401);
+});
+
+test('one account’s appearance is not another’s', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+  await admin('/api/theme', { method: 'PUT', body: { theme: 'light' } });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+  assert.equal((await member('/api/settings')).body.theme, 'system');
+
+  await member('/api/theme', { method: 'PUT', body: { theme: 'dark' } });
+  assert.equal((await admin('/api/settings')).body.theme, 'light', "the admin's choice is untouched");
+});
+
 // --- the position tracker -----------------------------------------------------------------------
 
 const POSITION = {

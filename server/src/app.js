@@ -26,6 +26,7 @@ import { daysBetween } from './domain/math.js';
 import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/history.js';
 import { cleanWatchlist } from './domain/watchlist.js';
 import { DIGEST_LIMIT } from './domain/advice.js';
+import { cleanTheme } from './domain/theme.js';
 import {
   POSITION_TYPES,
   breachOf,
@@ -373,6 +374,16 @@ export function createApp({ config, db = null }) {
     wrap(async (req, res) => {
       await store.deletePosition(currentUserId(req), req.params.id);
       res.json({ ok: true });
+    }),
+  );
+
+  app.put(
+    '/api/theme',
+    gate,
+    wrap(async (req, res) => {
+      const theme = cleanTheme(req.body?.theme);
+      await store.update(currentUserId(req), { theme });
+      res.json({ theme });
     }),
   );
 

@@ -1,24 +1,149 @@
+/* ============================================================================================
+   Themes
+   ============================================================================================
+
+   Two themes, each SELECTED rather than derived. Light is not dark with the lightness flipped:
+   the chart hues are their own steps, chosen for the light surface and checked against it with
+   the dataviz palette validator — an inverted dark blue lands outside the light lightness band
+   and stops clearing contrast on white.
+
+   Every colour in this file is a role below. A literal hex further down is a bug: it is a value
+   that cannot follow the theme, and it shows up as a dark panel on a white page.
+
+   The cascade: :root carries dark (the app's original look, and what an unset preference gets),
+   a `light` stamp on <html> wins, and the OS preference applies only when nothing is stamped. */
+
 :root {
+  color-scheme: dark;
+
   --bg: #0f1216;
   --panel: #161b22;
+  --sunken: #0d1117;        /* inputs, tiles, the inside of a panel */
+  --raised: #1b2230;        /* hover on something already raised */
   --line: #232a33;
+  --line-soft: #1b2027;     /* row rules inside a table, quieter than a panel edge */
+  --detail: #11151b;        /* an expanded row, set back from the table it belongs to */
+
   --text: #e6edf3;
+  --text-secondary: #b1bac4;
   --muted: #8b949e;
+  --on-accent: #04121f;     /* ink that sits ON the accent, not beside it */
+  --on-warn: #1a1204;
+
   --accent: #58a6ff;
   --good: #3fb950;
   --bad: #f85149;
   --warn: #d29922;
 
-  /* Chart roles. Categorical slots 1 and 2 and the diverging blue↔red pair, all validated with
-     the dataviz palette checker against --panel (#161b22): lightness band, chroma floor, CVD
-     separation (ΔE 26.8 and 19.2) and ≥3:1 contrast all pass. Blue↔red rather than green↔red for
-     profit and loss, because green↔red is the pair a red-green colour-blind reader cannot split. */
+  /* Chart roles: categorical slots 1 and 2, and the diverging blue↔red pair. Validated against
+     --panel (#161b22): lightness band, chroma floor, CVD separation (ΔE 26.8 and 19.2) and ≥3:1
+     contrast all pass. Blue↔red rather than green↔red for profit and loss, because green↔red is
+     the pair a red-green colour-blind reader cannot split. */
   --series-1: #3987e5;
   --series-2: #d95926;
   --profit: #3987e5;
   --loss: #e66767;
-  --text-secondary: #b1bac4;
-  color-scheme: dark;
+
+  --axis: #6e7681;          /* zero line, strike guides — recessive, not invisible */
+  --gridline: #232a33;
+  --band: rgba(139, 148, 158, 0.08);
+  --band-strong: rgba(139, 148, 158, 0.16);
+  --chip: rgba(139, 148, 158, 0.18);
+  --chip-on: rgba(4, 18, 31, 0.22);
+  --meter-track: rgba(57, 135, 229, 0.18);
+  --good-wash: rgba(63, 185, 80, 0.08);
+  --warn-wash: rgba(210, 153, 34, 0.08);
+  --outline: rgba(177, 186, 196, 0.35);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --logo-tile: #ffffff;
+}
+
+/* The light theme. Its chart steps are the light column of the same ramps — #2a78d6 and #eb6834
+   for the two categorical slots, #2a78d6 ↔ #e34948 for profit and loss — each run through the
+   validator against the light panel (#ffffff): band, chroma, CVD separation (ΔE 24.7 and 21.6)
+   and ≥3:1 contrast all pass. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --sunken: #f7f9fb;
+  --raised: #eef3f9;
+  --line: #d9dfe6;
+  --line-soft: #e8ecf1;
+  --detail: #f7f9fb;
+
+  --text: #16202b;
+  --text-secondary: #3f4c5a;
+  --muted: #64717f;
+  --on-accent: #ffffff;
+  --on-warn: #1a1204;
+
+  --accent: #1667c8;
+  --good: #1a7f37;
+  --bad: #c3291c;
+  --warn: #9a6700;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --profit: #2a78d6;
+  --loss: #e34948;
+
+  --axis: #6e7681;
+  --gridline: #e3e8ee;
+  --band: rgba(100, 113, 127, 0.1);
+  --band-strong: rgba(100, 113, 127, 0.18);
+  --chip: rgba(100, 113, 127, 0.14);
+  --chip-on: rgba(255, 255, 255, 0.28);
+  --meter-track: rgba(42, 120, 214, 0.18);
+  --good-wash: rgba(26, 127, 55, 0.08);
+  --warn-wash: rgba(154, 103, 0, 0.1);
+  --outline: rgba(63, 76, 90, 0.35);
+  --shadow: rgba(16, 32, 43, 0.14);
+  --logo-tile: transparent;
+}
+
+/* The OS preference, and only when the viewer has not chosen. The :not() guard is what lets a
+   light stamp win on a machine set to dark; without it the media block would override it. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']):not([data-theme='light']) {
+    color-scheme: light;
+
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --sunken: #f7f9fb;
+    --raised: #eef3f9;
+    --line: #d9dfe6;
+    --line-soft: #e8ecf1;
+    --detail: #f7f9fb;
+
+    --text: #16202b;
+    --text-secondary: #3f4c5a;
+    --muted: #64717f;
+    --on-accent: #ffffff;
+
+    --accent: #1667c8;
+    --good: #1a7f37;
+    --bad: #c3291c;
+    --warn: #9a6700;
+
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --profit: #2a78d6;
+    --loss: #e34948;
+
+    --gridline: #e3e8ee;
+    --band: rgba(100, 113, 127, 0.1);
+    --band-strong: rgba(100, 113, 127, 0.18);
+    --chip: rgba(100, 113, 127, 0.14);
+    --chip-on: rgba(255, 255, 255, 0.28);
+    --meter-track: rgba(42, 120, 214, 0.18);
+    --good-wash: rgba(26, 127, 55, 0.08);
+    --warn-wash: rgba(154, 103, 0, 0.1);
+    --outline: rgba(63, 76, 90, 0.35);
+    --shadow: rgba(16, 32, 43, 0.14);
+    --logo-tile: transparent;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -90,13 +215,13 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--accent); color: #04121f; border-color: var(--accent); font-weight: 600; }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 button.link { background: none; border: none; color: var(--muted); padding: 2px 6px; font-size: 16px; }
 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 input {
-  background: #0d1117;
+  background: var(--sunken);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -107,7 +232,7 @@ input {
 input:focus, select:focus { outline: none; border-color: var(--accent); }
 
 select {
-  background: #0d1117;
+  background: var(--sunken);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -126,7 +251,7 @@ a.button {
   text-decoration: none;
   font-weight: 500;
 }
-a.button:hover { background: #1b2230; }
+a.button:hover { background: var(--raised); }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -168,7 +293,8 @@ table.results thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #0f1216;
+  /* The page plane, not the panel: this header sticks over the page as the table scrolls. */
+  background: var(--bg);
 }
 table.results th {
   text-align: left;
@@ -185,8 +311,8 @@ table.results th:first-child, table.results td:first-child { text-align: left; }
 table.results td { padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 
 tr.row { cursor: pointer; }
-tr.row:hover { background: #1b2027; }
-tr.row.open { background: #1b2027; }
+tr.row:hover { background: var(--line-soft); }
+tr.row.open { background: var(--line-soft); }
 tr.row.earnings td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
 
 .toggle { color: var(--muted); display: inline-block; width: 14px; margin-right: 6px; }
@@ -194,14 +320,14 @@ tr.row.earnings td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
   display: inline-block;
   margin-left: 6px;
   background: var(--warn);
-  color: #1a1204;
+  color: var(--on-warn);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 10px;
   font-weight: 700;
 }
 
-.detail-row td { padding: 0; background: #11151b; }
+.detail-row td { padding: 0; background: var(--detail); }
 
 /* Pinned to the left edge of the scroll container: expanding a row should put the detail where
    you are already looking, not somewhere off to the right past column 13. */
@@ -222,7 +348,7 @@ tr.row.earnings td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
 table.legs { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
 table.legs th { text-align: right; padding: 4px 8px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); }
 table.legs th:first-child, table.legs th:nth-child(2) { text-align: left; }
-table.legs td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #1b2027; }
+table.legs td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--line-soft); }
 table.legs td:first-child, table.legs td:nth-child(2) { text-align: left; }
 table.legs tr.sell td:first-child { color: var(--bad); font-weight: 600; }
 table.legs tr.buy td:first-child { color: var(--good); font-weight: 600; }
@@ -235,7 +361,7 @@ table.components tr.worst td:first-child { color: var(--warn); }
 .bar span { display: block; height: 6px; background: var(--accent); border-radius: 3px; }
 
 .facts { margin: 14px 0 0; font-size: 12px; }
-.facts div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid #1b2027; }
+.facts div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--line-soft); }
 .facts dt { color: var(--muted); margin: 0; }
 .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
 
@@ -266,9 +392,9 @@ table.components tr.worst td:first-child { color: var(--warn); }
 .w-qty { width: 84px; }
 
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.segmented button { border: none; border-radius: 0; padding: 6px 12px; background: #0d1117; color: var(--muted); }
+.segmented button { border: none; border-radius: 0; padding: 6px 12px; background: var(--sunken); color: var(--muted); }
 .segmented button + button { border-left: 1px solid var(--line); }
-.segmented button.on { background: var(--accent); color: #04121f; font-weight: 600; }
+.segmented button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 
 .sim-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; transition: opacity 0.15s; }
 /* Refetch keeps the frame: the previous render stays, dimmed, rather than flashing empty. */
@@ -289,12 +415,12 @@ table.components tr.worst td:first-child { color: var(--warn); }
 
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 2px; padding: 0; font-size: 12px; color: var(--text-secondary); }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }
-.legend-band { display: inline-block; width: 16px; height: 10px; background: rgba(139, 148, 158, 0.16); border-radius: 2px; }
+.legend-band { display: inline-block; width: 16px; height: 10px; background: var(--band-strong); border-radius: 2px; }
 
-.sigma-band { fill: rgba(139, 148, 158, 0.08); }
+.sigma-band { fill: var(--band); }
 /* Named gridline, not grid: .grid is already the two-column form layout used by Filters. */
-.gridline { stroke: #232a33; stroke-width: 1; }
-.zero { stroke: #6e7681; stroke-width: 1.25; }
+.gridline { stroke: var(--gridline); stroke-width: 1; }
+.zero { stroke: var(--axis); stroke-width: 1.25; }
 .axis-label { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .fill-profit { fill: var(--profit); fill-opacity: 0.16; }
@@ -303,7 +429,7 @@ table.components tr.worst td:first-child { color: var(--warn); }
 .ln-expiry { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .ln-projected { fill: none; stroke: var(--series-2); stroke-width: 2; stroke-dasharray: 6 4; stroke-linejoin: round; }
 
-.guide-strike { stroke: #6e7681; stroke-width: 1; stroke-dasharray: 2 3; }
+.guide-strike { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 2 3; }
 .guide-spot { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 4 3; }
 
 /* 2px surface ring so the marker reads against either fill and either line. */
@@ -321,13 +447,13 @@ table.components tr.worst td:first-child { color: var(--warn); }
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: #0d1117;
+  background: var(--sunken);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
   min-width: 180px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 18px var(--shadow);
   font-variant-numeric: tabular-nums;
 }
 .tt-head { margin-bottom: 4px; }
@@ -341,7 +467,7 @@ table.components tr.worst td:first-child { color: var(--warn); }
 /* --- side panel ----------------------------------------------------------------------------- */
 
 .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.tile { display: flex; flex-direction: column; gap: 2px; background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.tile { display: flex; flex-direction: column; gap: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 .tile-value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 2px; border-top: 3px solid transparent; }
 .tile-value.pos { border-top-color: var(--profit); }
 .tile-value.neg { border-top-color: var(--loss); }
@@ -353,7 +479,7 @@ table.components tr.worst td:first-child { color: var(--warn); }
 
 .warning {
   border-left: 3px solid var(--warn);
-  background: rgba(210, 153, 34, 0.08);
+  background: var(--warn-wash);
   padding: 6px 10px;
   margin: 0 0 10px;
   border-radius: 0 4px 4px 0;
@@ -371,7 +497,7 @@ table.pnl-grid .sub { display: block; font-size: 10px; opacity: 0.8; }
 table.pnl-grid .row-tags { color: var(--text-secondary); font-size: 10px; }
 table.pnl-grid tr.key-row th { color: var(--text); }
 table.pnl-grid tr.spot-row th { font-weight: 600; }
-table.pnl-grid tr.spot-row td { outline: 1px solid rgba(177, 186, 196, 0.35); outline-offset: -1px; }
+table.pnl-grid tr.spot-row td { outline: 1px solid var(--outline); outline-offset: -1px; }
 
 table.legs td:first-child { white-space: nowrap; }
 
@@ -394,7 +520,7 @@ table.legs td:first-child { white-space: nowrap; }
 
 .notice {
   border-left: 3px solid var(--good);
-  background: rgba(63, 185, 80, 0.08);
+  background: var(--good-wash);
   padding: 8px 12px;
   border-radius: 0 4px 4px 0;
 }
@@ -437,12 +563,12 @@ table.users-table td select { padding: 3px 6px; font-size: 12px; }
 .brand h1 { padding: 12px 0; }
 .brand:hover h1 { color: var(--text); }
 
-/* The logo is drawn for light backgrounds — its navy wordmark all but vanishes on this one — so
-   it sits on a white tile rather than being recoloured. Same treatment as the app icon, and it
-   leaves the brand asset itself untouched. */
+/* The logo is drawn for light backgrounds — its navy wordmark all but vanishes on a dark one —
+   so it sits on a white tile rather than being recoloured, and the tile disappears in light mode
+   where it is no longer earning anything. The brand asset itself is left untouched either way. */
 .signin-logo {
   align-self: center;
-  background: #fff;
+  background: var(--logo-tile);
   border-radius: 14px;
   padding: 18px 22px;
   width: min(260px, 78%);
@@ -521,7 +647,7 @@ table.users-table td select { padding: 3px 6px; font-size: 12px; }
 .price-line { fill: none; stroke: var(--series-1); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
 .price-area { fill: var(--series-1); fill-opacity: 0.1; stroke: none; }
 /* Where the period started — the line the header's change is measured from. */
-.baseline { stroke: #6e7681; stroke-width: 1; stroke-dasharray: 4 3; }
+.baseline { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 4 3; }
 .price-dot { fill: var(--series-1); stroke: var(--panel); stroke-width: 2; }
 
 .tt-grid { display: grid; grid-template-columns: auto auto; gap: 1px 12px; font-variant-numeric: tabular-nums; }
@@ -603,14 +729,14 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
   margin-left: 6px;
   padding: 0 5px;
   border-radius: 8px;
-  background: rgba(139, 148, 158, 0.18);
+  background: var(--chip);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.lists .chip.on .count { background: rgba(4, 18, 31, 0.22); }
+.lists .chip.on .count { background: var(--chip-on); }
 /* The live list is filled, not merely outlined: on a row of chips an outline reads as "available",
    and which list the screener is about to scan is not a detail to squint at. */
-.lists .chip.on { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.lists .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .lists .chip.new { border-style: dashed; color: var(--muted); }
 
 .list-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -634,7 +760,7 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-.greek { background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.greek { background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 .greek dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .greek dd { margin: 2px 0 0; display: flex; flex-direction: column; gap: 1px; }
 /* Proportional figures, not tabular: these are standalone values, not a column to line up, and
@@ -653,12 +779,12 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
 
 .ask-panel { margin-top: 16px; max-width: 80ch; }
 .ask-panel h2 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; }
-.ask-panel code { background: #0d1117; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+.ask-panel code { background: var(--sunken); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
 
 .ask-form { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
 .ask-form textarea {
   flex: 1 1 auto;
-  background: #0d1117;
+  background: var(--sunken);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -701,7 +827,7 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
 .goal-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
 @media (max-width: 760px) { .goal-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-.goal { display: flex; flex-direction: column; gap: 3px; background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.goal { display: flex; flex-direction: column; gap: 3px; background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
 .goal-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 /* Proportional figures: a standalone value, not a column to line up. */
 .goal-value { font-size: 20px; font-weight: 600; }
@@ -709,7 +835,7 @@ table.watchlist-table .row-actions button { padding: 4px 9px; font-size: 12px; }
 
 /* One value against one limit. The unfilled track is a lighter step of the same hue, so the
    state reads across the whole bar rather than from the fill alone. */
-.meter { display: block; height: 5px; border-radius: 3px; background: rgba(57, 135, 229, 0.18); overflow: hidden; margin: 3px 0 1px; }
+.meter { display: block; height: 5px; border-radius: 3px; background: var(--meter-track); overflow: hidden; margin: 3px 0 1px; }
 .meter-fill { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
 
 /* --- the add form --------------------------------------------------------------------------- */
@@ -755,7 +881,28 @@ tr.pos-closed td, tr.pos-rolled td, tr.pos-assigned td { opacity: 0.62; }
 .tone-warn  { border-color: var(--warn); color: var(--warn); }
 .tone-watch { border-color: var(--series-2); color: var(--series-2); }
 
-tr.settle-row td { background: #0d1117; white-space: normal; }
+tr.settle-row td { background: var(--sunken); white-space: normal; }
 .settle-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 4px 0; }
 .settle-form .segmented button { padding: 5px 11px; font-size: 12px; }
 .settle-form p { flex-basis: 100%; margin: 0; }
+
+/* --- the appearance control ------------------------------------------------------------------ */
+
+.theme-toggle select {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--sunken);
+  border-color: var(--line);
+}
+
+/* On the sign-in screen it sits under the card rather than in a bar there is none of. */
+.signin-theme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+/* The brand mark is a coloured monogram on transparency and reads on either plane; the panels,
+   rules and ink around it all follow the theme, so nothing else here is theme-specific. */

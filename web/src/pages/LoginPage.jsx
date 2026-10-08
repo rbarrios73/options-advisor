@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { api } from '../api.js';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 /**
  * The sign-in screen.
@@ -9,7 +10,7 @@ import { api } from '../api.js';
  * send, and a reset without it is not a reset, it is a back door. An administrator sets a new
  * password instead — which is what the message at the bottom says, so nobody is left guessing.
  */
-export default function LoginPage({ onSignedIn }) {
+export default function LoginPage({ onSignedIn, theme, onTheme }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -71,6 +72,13 @@ export default function LoginPage({ onSignedIn }) {
           because this app does not send mail.
         </p>
       </form>
+
+      {/* The appearance control belongs here too: this is the first screen a new viewer sees, and
+          "I cannot read this" should not be something you have to sign in to fix. */}
+      <div className="signin-theme">
+        <span className="muted small">Appearance</span>
+        <ThemeToggle value={theme} onChange={onTheme} />
+      </div>
     </div>
   );
 }

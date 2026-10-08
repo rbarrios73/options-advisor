@@ -24,6 +24,7 @@ import {
   uniqueName,
 } from './domain/watchlist.js';
 import { cleanGoals, cleanPosition, sortPositions } from './domain/positions.js';
+import { cleanTheme } from './domain/theme.js';
 
 /** Raised by either store when a request is refused for a reason worth telling the user. */
 export class StoreError extends Error {
@@ -50,6 +51,10 @@ export function withDefaults(stored) {
     // Premium targets for the tracker. A setting rather than a table: three numbers that change
     // once a year, not a list of things.
     goals: cleanGoals(stored?.goals),
+
+    // Light, dark or system. Kept on the account so the choice follows you to another browser;
+    // the browser also keeps its own copy, which is what paints the first frame.
+    theme: cleanTheme(stored?.theme),
   };
 }
 

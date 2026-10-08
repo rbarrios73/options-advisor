@@ -37,6 +37,9 @@ export const api = {
   deletePosition: (id) => fetch(`/api/positions/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json),
   saveGoals: (goals) => send('/api/goals', 'PUT', { goals }),
 
+  /** Light, dark or system — kept on the account so it follows you to another browser. */
+  saveTheme: (theme) => send('/api/theme', 'PUT', { theme }),
+
   saveWatchlist: (watchlist) =>
     fetch('/api/watchlist', {
       method: 'PUT',

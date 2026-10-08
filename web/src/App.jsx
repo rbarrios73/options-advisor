@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { api } from './api.js';
 import { hrefFor, pagesFor, useRoute } from './router.js';
+import { applyTheme, readStoredTheme, storeTheme, watchSystemTheme } from './theme.js';
+import ThemeToggle from './components/ThemeToggle.jsx';
 import ScreenerPage from './pages/ScreenerPage.jsx';
 import SimulatorPage from './pages/SimulatorPage.jsx';
 import TickerPage from './pages/TickerPage.jsx';
@@ -27,6 +29,30 @@ export default function App() {
 
   const user = session?.user ?? null;
 
+  // The theme the viewer chose. Seeded from this browser's storage so it matches what the inline
+  // script in index.html already painted; replaced by the account's own choice once settings
+  // arrive, which is what lets it follow you to another machine.
+  const [theme, setThemeState] = useState(readStoredTheme);
+
+  useEffect(() => {
+    applyTheme(theme);
+    storeTheme(theme);
+  }, [theme]);
+
+  // A machine that flips to dark at sunset should move anyone who chose "system". The stamp is
+  // always a resolved light or dark, so nothing repaints unless the answer actually changed.
+  useEffect(() => {
+    if (theme !== 'system') return undefined;
+    return watchSystemTheme(() => applyTheme('system'));
+  }, [theme]);
+
+  const setTheme = (next) => {
+    setThemeState(next);
+    // Saved to the account as well, so the choice is not stranded in one browser. It is a
+    // preference, not a transaction: a failure here is not worth an error banner over the app.
+    if (user) api.saveTheme(next).catch(() => {});
+  };
+
   useEffect(() => {
     api.me().then(setSession).catch((e) => setError(e.message));
   }, []);
@@ -37,7 +63,15 @@ export default function App() {
       setSettings(null);
       return;
     }
-    api.settings().then(setSettings).catch((e) => setError(e.message));
+    api
+      .settings()
+      .then((loaded) => {
+        setSettings(loaded);
+        // The account's choice wins over this browser's, so signing in on a new machine brings
+        // your appearance with you rather than adopting whatever that machine had.
+        if (loaded.theme) setThemeState(loaded.theme);
+      })
+      .catch((e) => setError(e.message));
   }, [user?.id]);
 
   const signedIn = useCallback((nextUser) => {
@@ -120,7 +154,7 @@ export default function App() {
   }
 
   if (session.accounts && !user) {
-    return <LoginPage onSignedIn={signedIn} />;
+    return <LoginPage onSignedIn={signedIn} theme={theme} onTheme={setTheme} />;
   }
 
   // A member who types #/users gets the Screener rather than a broken page. The server refuses
@@ -151,14 +185,18 @@ export default function App() {
           ))}
         </nav>
 
-        {session.accounts && (
-          <div className="who">
-            <span className="muted small">{user.email}</span>
-            <button type="button" className="link-button" onClick={signOut}>
-              Sign out
-            </button>
-          </div>
-        )}
+        <div className="who">
+          <ThemeToggle value={theme} onChange={setTheme} />
+
+          {session.accounts && (
+            <>
+              <span className="muted small">{user.email}</span>
+              <button type="button" className="link-button" onClick={signOut}>
+                Sign out
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}

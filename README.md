@@ -447,6 +447,33 @@ Things the model does not know, stated on the page as well:
 The page's address describes what is on screen (`#/simulator?symbol=SPY&exp=…&delta=0.2&width=5`),
 so a setup can be bookmarked or sent to someone.
 
+## Light and dark
+
+A control in the top bar: **Light**, **Dark**, or **System**. System is the default and follows
+the machine, including when it flips at sunset — a laptop already knows which its owner wants, and
+the app should not be the one thing that ignores it. The two explicit choices exist for when the
+OS setting is wrong for the room: a dark-themed laptop in sunlight, a bright one at night.
+
+The choice is saved twice, on purpose. **In the browser**, so an inline script in `index.html` can
+stamp it on `<html>` before the first paint — read it in React instead and the page shows the
+wrong theme for a frame and then flips, which is the white flash every themed site is judged by.
+**On the account**, so signing in on another machine brings your appearance with you rather than
+adopting whatever that machine had. The account wins when the two disagree.
+
+Light is **selected, not inverted**. Its chart hues are the light steps of the same ramps —
+`#2a78d6` and `#eb6834` for the two categorical slots, `#2a78d6` ↔ `#e34948` for profit and loss —
+each run through the dataviz palette validator against the light panel: lightness band, chroma
+floor, CVD separation (ΔE 24.7 and 21.6) and ≥3:1 contrast all pass. Flipping the dark blue's
+lightness instead would land outside the light band and stop clearing contrast on white.
+
+Every colour in `styles.css` is a named role. A literal hex below the token block is a bug — it is
+a value that cannot follow the theme, and it shows up as a dark panel on a white page. The browser
+check walks every rendered element on every page and fails on any surface whose lightness
+disagrees with the page it sits on, because that is the one class of mistake no unit test catches.
+
+The control also sits on the sign-in screen. "I cannot read this" should not be something you have
+to sign in to fix — and without a database there is no Account page to hide it on.
+
 ## Layout
 
 ```
@@ -460,6 +487,7 @@ server/
                 advice.js                                          ← what the model may see, and
                                                                      how its answer is checked
                 positions.js                                       ← the tracker: breach, goals
+                theme.js                                           ← light, dark or the machine
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     advisor.js  the optional model reader — one fetch, no SDK
@@ -468,13 +496,14 @@ server/
     db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         182 tests, no network and no database needed
+  test/         189 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · WatchlistPage · PositionsPage · TickerPage
                 SimulatorPage
                 LoginPage · UsersPage · AccountPage
-    components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable · AskPanel · …
+    components/ PayoffChart · PriceChart (SVG) · PnlGrid · ResultsTable
+                AskPanel · ThemeToggle · …
     router.js   hash routing — a handful of pages do not need a library
 ```
 
