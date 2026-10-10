@@ -56,6 +56,18 @@ services:
       - key: ADMIN_PASSWORD
         generateValue: true
 
+      # --- letting people sign themselves up (optional) ---
+      #
+      # BLANK MEANS OFF, and off means the route is not even mounted — there is nothing to probe.
+      # Set a shared code here and the sign-in screen grows a "Create account" tab: anyone who has
+      # the code can make themselves an account. Change the code to close the door again.
+      #
+      # A code rather than open registration because every account shares one Tradier rate limit
+      # and one Anthropic budget. Strangers who find the URL should not be able to spend either.
+      # Accounts made this way are always members, never administrators.
+      - key: SIGNUP_CODE
+        sync: false
+
       # --- the advisor on the Screener (optional) ---
       #
       # Blank means off, and the page says so. Paste an Anthropic key in the dashboard to turn it

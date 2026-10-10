@@ -16,8 +16,14 @@ import { seedWatchlist } from './store.js';
 const scryptAsync = promisify(scrypt);
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
-export const MIN_PASSWORD_LENGTH = 10;
 const ROLES = new Set(['admin', 'member']);
+
+// The rule lives in domain/ so the sign-up form can read the same minimum this file enforces.
+// Imported AND re-exported: `export ... from` alone re-exports without binding the name locally,
+// and this file calls passwordProblem itself a few lines down.
+import { MIN_PASSWORD_LENGTH, passwordProblem } from './domain/passwords.js';
+
+export { MIN_PASSWORD_LENGTH, passwordProblem };
 
 // --- passwords ---------------------------------------------------------------------------------
 
@@ -50,16 +56,6 @@ export async function verifyPassword(password, stored) {
   } catch {
     return false;
   }
-}
-
-/** What is wrong with this password, or null if nothing is. */
-export function passwordProblem(password) {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
-    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
-  }
-  if (password.length > 200) return 'Password is too long.';
-  if (password.trim().length === 0) return 'Password cannot be only spaces.';
-  return null;
 }
 
 export function normaliseEmail(email) {

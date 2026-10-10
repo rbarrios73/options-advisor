@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
 
 import { migrate } from '../src/db.js';
+import { secretMatches } from '../src/auth.js';
 import { createDbStore } from '../src/store.js';
 import { MAX_LISTS } from '../src/domain/watchlist.js';
 import {
@@ -514,4 +515,35 @@ test('migrate is safe to run again on a database that already has data', async (
   await migrate(db);
 
   assert.equal((await users.list()).length, 1);
+});
+
+// --- the invite code ----------------------------------------------------------------------------
+
+test('a secret matches only itself, and a missing one matches nothing', () => {
+  assert.equal(secretMatches('let-me-in', 'let-me-in'), true);
+
+  // Not trimmed, not case-folded, not prefix-matched: a code is a secret, and "close enough" is
+  // how a secret stops being one.
+  for (const offered of ['let-me-in ', ' let-me-in', 'LET-ME-IN', 'let-me-i', 'let-me-inn', '']) {
+    assert.equal(secretMatches(offered, 'let-me-in'), false, JSON.stringify(offered));
+  }
+
+  // No configured secret means nothing can match it — including an empty offer, which is what an
+  // unconfigured deployment would otherwise accept from everybody.
+  for (const expected of ['', null, undefined]) {
+    assert.equal(secretMatches('', expected), false, JSON.stringify(expected));
+    assert.equal(secretMatches('anything', expected), false, JSON.stringify(expected));
+  }
+
+  // Non-strings are offered by anyone posting JSON, and must not throw on the way to false.
+  for (const offered of [null, undefined, 42, {}, []]) {
+    assert.equal(secretMatches(offered, 'let-me-in'), false, JSON.stringify(offered));
+  }
+});
+
+test('comparing secrets of different lengths does not throw', () => {
+  // timingSafeEqual itself throws on a length mismatch — which is why both sides are hashed to a
+  // fixed width first. A code of the wrong length must be a plain "no", not a 500.
+  assert.doesNotThrow(() => secretMatches('a', 'a-much-longer-secret-than-that'));
+  assert.equal(secretMatches('a', 'a-much-longer-secret-than-that'), false);
 });

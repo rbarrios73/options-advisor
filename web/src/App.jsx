@@ -154,7 +154,14 @@ export default function App() {
   }
 
   if (session.accounts && !user) {
-    return <LoginPage onSignedIn={signedIn} theme={theme} onTheme={setTheme} />;
+    return (
+      <LoginPage
+        onSignedIn={signedIn}
+        signupOpen={session.signupOpen}
+        theme={theme}
+        onTheme={setTheme}
+      />
+    );
   }
 
   // A member who types #/users gets the Screener rather than a broken page. The server refuses

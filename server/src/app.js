@@ -12,6 +12,7 @@ import {
   readCookie,
   requireAdmin,
   requireUser,
+  secretMatches,
   sessionCookie,
   sessionUser,
 } from './auth.js';
@@ -74,6 +75,10 @@ export function createApp({ config, db = null }) {
   const currentUserId = (req) => req.user?.id ?? 'local';
   const gate = accounts ? requireUser : (_req, _res, next) => next();
 
+  // Self-registration needs both a code AND accounts: without a database there is nothing to
+  // register into, and the whole app sits behind one shared password instead.
+  const signupOpen = Boolean(accounts && config.signupCode);
+
   const provider = createProvider(config);
   const scanner = createScanner({ provider, cacheTtlMs: config.cacheTtlMs });
 
@@ -105,7 +110,13 @@ export function createApp({ config, db = null }) {
   app.get('/api/me', (req, res) => {
     // Always 200: "nobody is signed in" is an answer, not an error, and the front end needs it to
     // decide between the app and the sign-in screen.
-    res.json({ accounts, user: accounts ? req.user ?? null : { id: 'local', email: null, role: 'admin' } });
+    res.json({
+      accounts,
+      user: accounts ? req.user ?? null : { id: 'local', email: null, role: 'admin' },
+      // So the sign-in screen knows whether to offer a door. A closed deployment should not
+      // advertise one that is locked.
+      signupOpen,
+    });
   });
 
   if (accounts) {
@@ -123,6 +134,43 @@ export function createApp({ config, db = null }) {
         res.json({ user });
       }),
     );
+
+    // --- signing up --------------------------------------------------------------------------
+    //
+    // Mounted only when SIGNUP_CODE is set. An unconfigured deployment has no route at all, not a
+    // route that refuses — there is nothing to probe and nothing to misconfigure into being open.
+
+    if (signupOpen) {
+      app.post(
+        '/api/signup',
+        // Its own limiter, and a tighter one: creating accounts is rarer than signing in, and
+        // this is the endpoint that writes rows.
+        loginRateLimit({ attempts: 5, windowMs: 60 * 60_000, what: 'sign-up attempts' }),
+        wrap(async (req, res) => {
+          // THE CODE IS CHECKED FIRST, before the email is even looked at. Checking it later
+          // would turn this route into an account-enumeration oracle: "that email already has an
+          // account" is a different answer from "wrong code", and someone without the code could
+          // read the difference.
+          if (!secretMatches(req.body?.code, config.signupCode)) {
+            return res.status(403).json({ error: 'That invite code is not right.' });
+          }
+
+          // Role is hardcoded, not taken from the body. Nothing a stranger posts should be able
+          // to make them an administrator of someone else's app.
+          const user = await users.create({
+            email: req.body?.email,
+            password: req.body?.password,
+            role: 'member',
+          });
+
+          // Signed in on the spot: a form that creates an account and then asks you to log in is
+          // a form that makes you type the same password twice for no reason.
+          const { token, expiresAt } = await users.startSession(user.id);
+          res.set('Set-Cookie', sessionCookie(token, { expiresAt, secure: config.production }));
+          res.json({ user });
+        }),
+      );
+    }
 
     app.post(
       '/api/logout',

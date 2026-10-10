@@ -52,6 +52,15 @@ export const config = {
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
   adminReset: process.env.ADMIN_RESET === 'true',
 
+  // Self-registration. EMPTY MEANS OFF — the route is not even mounted, and the sign-in screen
+  // says nothing about signing up. Set a shared code to open it: anyone who has the code can
+  // make themselves an account, and changing the code closes the door again without a deploy of
+  // anything but this variable.
+  //
+  // A code rather than open registration because every account shares one Tradier rate limit and
+  // one Anthropic budget. Strangers who find the URL should not be able to spend either.
+  signupCode: process.env.SIGNUP_CODE ?? '',
+
   riskFreeRate: Number(process.env.RISK_FREE_RATE ?? 0.04),
 
   // The optional language-model reader on the Screener. Unset means the feature is off and the

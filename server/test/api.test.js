@@ -113,7 +113,11 @@ test('every data route needs a session; health and identity do not', async (t) =
 
   const me = await anon('/api/me');
   assert.equal(me.status, 200);
-  assert.deepEqual(me.body, { accounts: true, user: null }, 'not signed in is an answer, not an error');
+  assert.deepEqual(
+    me.body,
+    { accounts: true, user: null, signupOpen: false },
+    'not signed in is an answer, not an error — and sign-up is off until a code is set',
+  );
 
   for (const [path, method] of [
     ['/api/settings', 'GET'],
@@ -533,6 +537,167 @@ test('one account’s appearance is not another’s', async (t) => {
 
   await member('/api/theme', { method: 'PUT', body: { theme: 'dark' } });
   assert.equal((await admin('/api/settings')).body.theme, 'light', "the admin's choice is untouched");
+});
+
+// --- signing up ---------------------------------------------------------------------------------
+
+const CODE = 'let-me-in-please';
+const NEWCOMER = { email: 'newcomer@example.com', password: 'correct horse battery staple' };
+
+test('without a code configured there is no sign-up route at all', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const anon = s.client();
+
+  // Absent, not refusing: an unconfigured deployment has nothing to probe and nothing to
+  // misconfigure into being open.
+  assert.equal((await anon('/api/signup', { method: 'POST', body: NEWCOMER })).status, 404);
+  assert.equal((await anon('/api/me')).body.signupOpen, false, 'and the screen is told not to offer it');
+});
+
+test('with a code, anyone holding it can make an account and lands signed in', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+  const visitor = s.client();
+
+  assert.equal((await visitor('/api/me')).body.signupOpen, true);
+
+  const { status, body, setCookie } = await visitor('/api/signup', {
+    method: 'POST',
+    body: { ...NEWCOMER, code: CODE },
+  });
+
+  assert.equal(status, 200);
+  assert.equal(body.user.email, NEWCOMER.email);
+  assert.ok(setCookie, 'signed in on the spot — no second trip through the login form');
+
+  // And the session actually works, which a cookie alone does not prove.
+  assert.equal((await visitor('/api/me')).body.user.email, NEWCOMER.email);
+
+  // A new account arrives set up: its own lists, its own everything.
+  const settings = (await visitor('/api/settings')).body;
+  assert.equal(settings.watchlists.length, 1);
+  assert.equal(settings.watchlist.length, 10);
+  assert.deepEqual((await visitor('/api/positions')).body.positions, []);
+});
+
+test('a wrong code is refused, and refused BEFORE the email is looked at', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  const wrong = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: 'guess' } });
+  assert.equal(wrong.status, 403);
+  assert.match(wrong.body.error, /invite code/);
+
+  // The point of checking the code first: an address that ALREADY has an account must give the
+  // same answer as one that does not. Otherwise this route tells a stranger who banks here.
+  const existing = await s.client()('/api/signup', { method: 'POST', body: { ...ADMIN, code: 'guess' } });
+  assert.equal(existing.status, 403);
+  assert.deepEqual(existing.body, wrong.body, 'identical answers, so nothing can be enumerated');
+
+  // Not trimmed, not case-folded: a code is a secret, and "close enough" is how a secret stops
+  // being one. (Only two probes here — a third would trip the limiter, which the next test is for.)
+  for (const code of [' let-me-in-please ', 'LET-ME-IN-PLEASE']) {
+    const refused = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code } });
+    assert.equal(refused.status, 403, JSON.stringify(code));
+  }
+});
+
+test('guessing the code gets you five tries an hour', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  // The limit is per address and the whole point is that it is tighter than the sign-in one:
+  // creating accounts is rarer than signing in, and this is the route that writes rows.
+  const statuses = [];
+  for (let i = 0; i < 7; i++) {
+    statuses.push((await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: `guess-${i}` } })).status);
+  }
+
+  assert.deepEqual(statuses.slice(0, 5), [403, 403, 403, 403, 403]);
+  assert.deepEqual(statuses.slice(5), [429, 429], 'and then it stops answering');
+
+  // Even the right code is refused once the limiter is up — it guards the route, not the answer.
+  assert.equal((await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } })).status, 429);
+});
+
+test('sign-up cannot hand anybody the admin role, whatever the body says', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+  const visitor = s.client();
+
+  // The role is hardcoded on the route. Nothing a stranger posts should make them an
+  // administrator of someone else's app.
+  const { body } = await visitor('/api/signup', {
+    method: 'POST',
+    body: { ...NEWCOMER, code: CODE, role: 'admin' },
+  });
+  assert.equal(body.user.role, 'member');
+
+  assert.equal((await visitor('/api/users')).status, 403, 'and the admin routes stay shut');
+});
+
+test('sign-up still applies the password and email rules', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  const short = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, password: 'short', code: CODE } });
+  assert.equal(short.status, 400);
+  assert.match(short.body.error, /at least 10/);
+
+  const noEmail = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, email: 'not-an-email', code: CODE } });
+  assert.equal(noEmail.status, 400);
+});
+
+test('an address that is taken is told so — but only by someone who holds the code', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  const taken = await s.client()('/api/signup', { method: 'POST', body: { ...ADMIN, code: CODE } });
+  assert.equal(taken.status, 409);
+  assert.match(taken.body.error, /already has an account/);
+});
+
+test('a new account’s data is its own, and invisible to the one that invited it', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  // AAPL deliberately: it is NOT one of the ten defaults, so finding it on the newcomer's list
+  // could only mean the two accounts were sharing one.
+  await admin('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'AAPL', note: 'mine' }] } });
+
+  const visitor = s.client();
+  await visitor('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } });
+
+  const theirs = (await visitor('/api/settings')).body.watchlist;
+  assert.ok(theirs.length > 1 && !theirs.some((w) => w.symbol === 'AAPL'), 'they get the defaults, not the admin’s list');
+
+  await visitor('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'TLT' }] } });
+  assert.deepEqual(
+    (await admin('/api/settings')).body.watchlist.map((w) => w.symbol),
+    ['AAPL'],
+    'and the admin’s list is untouched',
+  );
+});
+
+test('the admin can still see and manage an account that signed itself up', async (t) => {
+  const s = await startServer({ signupCode: CODE });
+  t.after(s.close);
+
+  await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } });
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+
+  const { users: list } = (await admin('/api/users')).body;
+  const joined = list.find((u) => u.email === NEWCOMER.email);
+  assert.ok(joined, 'they show up on the Users page like anybody else');
+  assert.equal(joined.role, 'member');
+
+  // Including closing the door on one: a code that has leaked is a code you disable people from.
+  assert.equal((await admin(`/api/users/${joined.id}`, { method: 'PATCH', body: { disabled: true } })).status, 200);
 });
 
 // --- the position tracker -----------------------------------------------------------------------

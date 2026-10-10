@@ -9,7 +9,7 @@
 // Neither is a password reset flow, because that needs email this app cannot send. An admin sets
 // a new password instead, and doing so ends that account's sessions.
 
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'oa_session';
 
@@ -101,13 +101,29 @@ export function requireAdmin(req, res, next) {
 }
 
 /**
+ * Compares a secret with the one that was offered, without leaking how much of it matched.
+ *
+ * timingSafeEqual needs equal lengths, so both sides are hashed first — that also means a wrong
+ * code of a different length takes the same time as a wrong code of the right length. The attack
+ * this closes is narrow (guessing an invite code a character at a time over the network), but the
+ * fix is four lines and the alternative is reasoning about whether it is exploitable.
+ */
+export function secretMatches(offered, expected) {
+  if (!expected) return false;
+
+  const a = createHash('sha256').update(String(offered ?? '')).digest();
+  const b = createHash('sha256').update(String(expected)).digest();
+  return timingSafeEqual(a, b);
+}
+
+/**
  * A crude per-address rate limit on sign-in attempts, held in memory.
  *
  * In memory is honest about what it is: one process, and the counters reset when it restarts.
  * It exists to make online guessing slow, not to be a security control — scrypt is what makes a
  * stolen hash expensive, and the limit is what makes a login form tedious.
  */
-export function loginRateLimit({ attempts = 10, windowMs = 15 * 60_000 } = {}) {
+export function loginRateLimit({ attempts = 10, windowMs = 15 * 60_000, what = 'sign-in attempts' } = {}) {
   const seen = new Map();
 
   return function limit(req, res, next) {
@@ -129,7 +145,7 @@ export function loginRateLimit({ attempts = 10, windowMs = 15 * 60_000 } = {}) {
     if (entry.count > attempts) {
       const retryAfter = Math.ceil((entry.start + windowMs - now) / 1000);
       res.set('Retry-After', String(retryAfter));
-      return res.status(429).json({ error: `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minutes.` });
+      return res.status(429).json({ error: `Too many ${what}. Try again in ${Math.ceil(retryAfter / 60)} minutes.` });
     }
     next();
   };

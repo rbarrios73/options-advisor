@@ -16,6 +16,9 @@ export const api = {
   // show the sign-in screen rather than an error.
   me: () => fetch('/api/me').then(json),
   login: (email, password) => send('/api/login', 'POST', { email, password }),
+
+  /** Creates an account and signs it in, in one round trip. Only mounted when a code is set. */
+  signup: ({ email, password, code }) => send('/api/signup', 'POST', { email, password, code }),
   logout: () => send('/api/logout', 'POST'),
   changePassword: (currentPassword, newPassword) => send('/api/password', 'POST', { currentPassword, newPassword }),
 

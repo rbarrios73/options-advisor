@@ -203,6 +203,34 @@ decision both ways, since it is the kind of thing that only fails once it is dep
 The tables are created on boot and the admin account with them. Nothing else changes: the same
 code path runs against Neon, Supabase, Render or a local server.
 
+### Letting people sign themselves up
+
+By default only an administrator can create accounts. Set **`SIGNUP_CODE`** to a shared secret and
+the sign-in screen grows a **Create account** tab: anyone holding the code can register, and lands
+signed in with their own watchlists, positions and filters.
+
+Blank means off, and off means the route is not mounted at all — an unconfigured deployment has
+nothing to probe and nothing to misconfigure into being open. Changing the code closes the door
+again without touching anything else.
+
+A code rather than open registration because every account shares one Tradier rate limit and one
+Anthropic budget; strangers who find the URL should not be able to spend either. If a code leaks,
+change it, and disable anyone who got in on the Users page.
+
+Four things the route does on purpose:
+
+- **The code is checked first**, before the email is even looked at. Checked later, the route
+  becomes an account-enumeration oracle: "that address already has an account" is a different
+  answer from "wrong code", and someone without the code could read the difference. Both answers
+  are identical until you hold the code.
+- **The comparison is constant-time**, both sides hashed to a fixed width first — so a wrong code
+  of the wrong length takes as long as a wrong code of the right length, and `timingSafeEqual`
+  never throws on a length mismatch.
+- **The role is hardcoded to `member`.** Nothing a stranger posts can make them an administrator
+  of your app.
+- **Five attempts an hour per address**, tighter than the sign-in limit, because creating accounts
+  is rarer than signing in and this is the route that writes rows.
+
 ### How it behaves
 
 - **Two roles.** Admins can add, disable and delete accounts and set passwords; members just use
@@ -488,6 +516,7 @@ server/
                                                                      how its answer is checked
                 positions.js                                       ← the tracker: breach, goals
                 theme.js                                           ← light, dark or the machine
+                passwords.js                                       ← the rule both sides enforce
     providers/  tradier.js · mock.js · index.js                    ← swap the feed here
     scan.js     orchestration + caching
     advisor.js  the optional model reader — one fetch, no SDK
@@ -496,7 +525,7 @@ server/
     db.js       Postgres pool + schema, and the upgrades that run on boot
     app.js      the Express app, as a factory so the tests can drive it
     index.js    entry point: build it, migrate, listen
-  test/         189 tests, no network and no database needed
+  test/         200 tests, no network and no database needed
 web/
   src/
     pages/      ScreenerPage · WatchlistPage · PositionsPage · TickerPage
@@ -570,6 +599,13 @@ premium moves a goal and only on the day it was settled, that an assignment loss
 net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
+
+For sign-up: that an unconfigured deployment has no route at all rather than one that refuses;
+that a wrong code and a taken address give byte-identical answers, so the route cannot be used to
+find out who banks here; that the code is not trimmed, case-folded or prefix-matched; that posting
+`role: 'admin'` gets you a member account and a 403 on the admin routes; that the limiter stops
+the sixth attempt in an hour, the right code included; and that a new account arrives with its own
+seeded watchlist and cannot see the one that invited it.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password
