@@ -205,31 +205,35 @@ code path runs against Neon, Supabase, Render or a local server.
 
 ### Letting people sign themselves up
 
-By default only an administrator can create accounts. Set **`SIGNUP_CODE`** to a shared secret and
-the sign-in screen grows a **Create account** tab: anyone holding the code can register, and lands
-signed in with their own watchlists, positions and filters.
+By default only an administrator can create accounts. Set **`SIGNUP_OPEN=true`** and the sign-in
+screen grows a **Create account** tab that asks for nothing but an email and a password: anyone
+with the URL can register, and lands signed in with their own watchlists, positions and filters.
 
-Blank means off, and off means the route is not mounted at all — an unconfigured deployment has
-nothing to probe and nothing to misconfigure into being open. Changing the code closes the door
-again without touching anything else.
+It must be exactly `true`. `SIGNUP_OPEN=false` opening the door is the sort of thing nobody notices
+until strangers are already in, so anything else — `false`, `0`, `yes`, empty — leaves it shut, and
+shut means the route is not mounted at all rather than mounted and refusing. Setting it back to
+false closes the door again without touching anything else; accounts already created keep working.
 
-A code rather than open registration because every account shares one Tradier rate limit and one
-Anthropic budget; strangers who find the URL should not be able to spend either. If a code leaks,
-change it, and disable anyone who got in on the Users page.
+**`MAX_ACCOUNTS`** (default 25) is the brake. Open registration on a public URL is otherwise
+unbounded, and every account shares one Tradier rate limit and one Anthropic budget. At the cap the
+Create account tab disappears and the route refuses — but you can still add people by hand from the
+Users page, because the cap is there to stop strangers, not you.
 
 Four things the route does on purpose:
 
-- **The code is checked first**, before the email is even looked at. Checked later, the route
-  becomes an account-enumeration oracle: "that address already has an account" is a different
-  answer from "wrong code", and someone without the code could read the difference. Both answers
-  are identical until you hold the code.
-- **The comparison is constant-time**, both sides hashed to a fixed width first — so a wrong code
-  of the wrong length takes as long as a wrong code of the right length, and `timingSafeEqual`
-  never throws on a length mismatch.
+- **The cap is checked first**, before the email is even looked at, so a full deployment gives one
+  answer to everybody rather than becoming a way to probe the account list after it has stopped
+  letting people in.
 - **The role is hardcoded to `member`.** Nothing a stranger posts can make them an administrator
   of your app.
 - **Five attempts an hour per address**, tighter than the sign-in limit, because creating accounts
   is rarer than signing in and this is the route that writes rows.
+- **Nothing is trusted from the body but the email and the password.**
+
+One cost of open registration, stated plainly because it cannot be fixed here: while sign-up is on,
+the route tells anyone whether an address already has an account, since "taken" and "created" are
+necessarily different answers. Hiding that needs a confirmation email this app cannot send. If it
+matters more than the convenience, leave `SIGNUP_OPEN` off and add accounts from the Users page.
 
 ### How it behaves
 
@@ -600,12 +604,15 @@ net, and that the week starts on Monday with Sunday belonging to the week that j
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
 
-For sign-up: that an unconfigured deployment has no route at all rather than one that refuses;
-that a wrong code and a taken address give byte-identical answers, so the route cannot be used to
-find out who banks here; that the code is not trimmed, case-folded or prefix-matched; that posting
-`role: 'admin'` gets you a member account and a 403 on the admin routes; that the limiter stops
-the sixth attempt in an hour, the right code included; and that a new account arrives with its own
-seeded watchlist and cannot see the one that invited it.
+For sign-up: that a closed deployment has no route at all rather than one that refuses; that only
+the exact string `true` opens it, checked against the values a dashboard actually produces
+(`false`, `FALSE`, `0`, `no`, `off`, empty, `yes`); that the cap stops the account after the last
+one and makes `/api/me` stop advertising the tab before the route refuses, while leaving the admin
+free to add people by hand; that a full deployment answers a taken address and a fresh one
+identically, so it cannot be used to find out who banks here; that posting `role: 'admin'` gets you
+a member account and a 403 on the admin routes; that the limiter stops the sixth attempt in an
+hour, a valid one included; and that a new account arrives with its own seeded watchlist and cannot
+see anybody else's.
 
 For accounts: a real Postgres, in process (PGlite), so the SQL, constraints and cascades are the
 real ones rather than a stand-in that would agree with whatever the code does. They cover password

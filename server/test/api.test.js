@@ -116,7 +116,7 @@ test('every data route needs a session; health and identity do not', async (t) =
   assert.deepEqual(
     me.body,
     { accounts: true, user: null, signupOpen: false },
-    'not signed in is an answer, not an error — and sign-up is off until a code is set',
+    'not signed in is an answer, not an error — and sign-up is off until SIGNUP_OPEN says so',
   );
 
   for (const [path, method] of [
@@ -541,31 +541,40 @@ test('one account’s appearance is not another’s', async (t) => {
 
 // --- signing up ---------------------------------------------------------------------------------
 
-const CODE = 'let-me-in-please';
 const NEWCOMER = { email: 'newcomer@example.com', password: 'correct horse battery staple' };
+const OPEN = { signupOpen: true, maxAccounts: 25 };
 
-test('without a code configured there is no sign-up route at all', async (t) => {
+test('with sign-up closed there is no sign-up route at all', async (t) => {
   const s = await startServer();
   t.after(s.close);
   const anon = s.client();
 
-  // Absent, not refusing: an unconfigured deployment has nothing to probe and nothing to
-  // misconfigure into being open.
+  // Absent, not refusing: a deployment that has not opened the door has nothing to probe and
+  // nothing to misconfigure into being open.
   assert.equal((await anon('/api/signup', { method: 'POST', body: NEWCOMER })).status, 404);
   assert.equal((await anon('/api/me')).body.signupOpen, false, 'and the screen is told not to offer it');
 });
 
-test('with a code, anyone holding it can make an account and lands signed in', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+test('SIGNUP_OPEN must be exactly true — nothing else opens the door', async (t) => {
+  // The failure this guards against is SIGNUP_OPEN=false letting strangers in, which is the kind
+  // of thing nobody notices until they are already in. config.js reads the raw string; these are
+  // the values a dashboard actually produces.
+  for (const raw of ['false', 'FALSE', '0', 'no', 'off', '', 'yes']) {
+    const s = await startServer({ signupOpen: raw === 'true' });
+    t.after(s.close);
+    assert.equal((await s.client()('/api/signup', { method: 'POST', body: NEWCOMER })).status, 404, raw);
+  }
+});
+
+test('with sign-up open, anyone can make an account and lands signed in', async (t) => {
+  const s = await startServer(OPEN);
   t.after(s.close);
   const visitor = s.client();
 
   assert.equal((await visitor('/api/me')).body.signupOpen, true);
 
-  const { status, body, setCookie } = await visitor('/api/signup', {
-    method: 'POST',
-    body: { ...NEWCOMER, code: CODE },
-  });
+  // No code, no invite, nothing but an address and a password.
+  const { status, body, setCookie } = await visitor('/api/signup', { method: 'POST', body: NEWCOMER });
 
   assert.equal(status, 200);
   assert.equal(body.user.email, NEWCOMER.email);
@@ -581,85 +590,98 @@ test('with a code, anyone holding it can make an account and lands signed in', a
   assert.deepEqual((await visitor('/api/positions')).body.positions, []);
 });
 
-test('a wrong code is refused, and refused BEFORE the email is looked at', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+test('sign-up stops at the cap, and stops offering itself before it refuses', async (t) => {
+  // Two accounts allowed, and the bootstrap admin is already one of them — so exactly one
+  // newcomer fits.
+  const s = await startServer({ signupOpen: true, maxAccounts: 2 });
   t.after(s.close);
 
-  const wrong = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: 'guess' } });
-  assert.equal(wrong.status, 403);
-  assert.match(wrong.body.error, /invite code/);
+  assert.equal((await s.client()('/api/me')).body.signupOpen, true, 'room for one');
+  assert.equal((await s.client()('/api/signup', { method: 'POST', body: NEWCOMER })).status, 200);
 
-  // The point of checking the code first: an address that ALREADY has an account must give the
-  // same answer as one that does not. Otherwise this route tells a stranger who banks here.
-  const existing = await s.client()('/api/signup', { method: 'POST', body: { ...ADMIN, code: 'guess' } });
-  assert.equal(existing.status, 403);
-  assert.deepEqual(existing.body, wrong.body, 'identical answers, so nothing can be enumerated');
+  // Full: the screen stops advertising the tab...
+  assert.equal((await s.client()('/api/me')).body.signupOpen, false);
 
-  // Not trimmed, not case-folded: a code is a secret, and "close enough" is how a secret stops
-  // being one. (Only two probes here — a third would trip the limiter, which the next test is for.)
-  for (const code of [' let-me-in-please ', 'LET-ME-IN-PLEASE']) {
-    const refused = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code } });
-    assert.equal(refused.status, 403, JSON.stringify(code));
-  }
+  // ...and the route refuses anyway, because a browser can be holding an answer from before.
+  const full = await s.client()('/api/signup', {
+    method: 'POST',
+    body: { email: 'third@example.com', password: 'another long password' },
+  });
+  assert.equal(full.status, 403);
+  assert.match(full.body.error, /not taking new accounts/);
+
+  // The cap is checked BEFORE the email, so a full deployment answers identically whoever asks —
+  // it does not become a way to probe who banks here after it has stopped letting people in.
+  const taken = await s.client()('/api/signup', { method: 'POST', body: ADMIN });
+  assert.deepEqual(taken.body, full.body, 'identical answers, so nothing can be enumerated');
+
+  // And the cap binds strangers, not the administrator: adding people by hand still works.
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  assert.equal((await admin('/api/users', { method: 'POST', body: MEMBER })).status, 201);
 });
 
-test('guessing the code gets you five tries an hour', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+test('five sign-up attempts an hour, then it stops answering', async (t) => {
+  const s = await startServer(OPEN);
   t.after(s.close);
 
-  // The limit is per address and the whole point is that it is tighter than the sign-in one:
-  // creating accounts is rarer than signing in, and this is the route that writes rows.
+  // The limit is per address and tighter than the sign-in one: creating accounts is rarer than
+  // signing in, and this is the route that writes rows. A short password keeps each attempt from
+  // succeeding without changing what the limiter sees.
   const statuses = [];
   for (let i = 0; i < 7; i++) {
-    statuses.push((await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: `guess-${i}` } })).status);
+    const body = { email: `flood-${i}@example.com`, password: 'short' };
+    statuses.push((await s.client()('/api/signup', { method: 'POST', body })).status);
   }
 
-  assert.deepEqual(statuses.slice(0, 5), [403, 403, 403, 403, 403]);
-  assert.deepEqual(statuses.slice(5), [429, 429], 'and then it stops answering');
+  assert.deepEqual(statuses.slice(0, 5), [400, 400, 400, 400, 400]);
+  assert.deepEqual(statuses.slice(5), [429, 429]);
 
-  // Even the right code is refused once the limiter is up — it guards the route, not the answer.
-  assert.equal((await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } })).status, 429);
+  // Even a valid attempt is refused once the limiter is up — it guards the route, not the answer.
+  assert.equal((await s.client()('/api/signup', { method: 'POST', body: NEWCOMER })).status, 429);
 });
 
 test('sign-up cannot hand anybody the admin role, whatever the body says', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+  const s = await startServer(OPEN);
   t.after(s.close);
   const visitor = s.client();
 
   // The role is hardcoded on the route. Nothing a stranger posts should make them an
   // administrator of someone else's app.
-  const { body } = await visitor('/api/signup', {
-    method: 'POST',
-    body: { ...NEWCOMER, code: CODE, role: 'admin' },
-  });
+  const { body } = await visitor('/api/signup', { method: 'POST', body: { ...NEWCOMER, role: 'admin' } });
   assert.equal(body.user.role, 'member');
 
   assert.equal((await visitor('/api/users')).status, 403, 'and the admin routes stay shut');
 });
 
 test('sign-up still applies the password and email rules', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+  const s = await startServer(OPEN);
   t.after(s.close);
 
-  const short = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, password: 'short', code: CODE } });
+  const short = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, password: 'short' } });
   assert.equal(short.status, 400);
   assert.match(short.body.error, /at least 10/);
 
-  const noEmail = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, email: 'not-an-email', code: CODE } });
+  const noEmail = await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, email: 'not-an-email' } });
   assert.equal(noEmail.status, 400);
 });
 
-test('an address that is taken is told so — but only by someone who holds the code', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+test('an address that already has an account is told so', async (t) => {
+  const s = await startServer(OPEN);
   t.after(s.close);
 
-  const taken = await s.client()('/api/signup', { method: 'POST', body: { ...ADMIN, code: CODE } });
+  const taken = await s.client()('/api/signup', { method: 'POST', body: ADMIN });
   assert.equal(taken.status, 409);
   assert.match(taken.body.error, /already has an account/);
+
+  // Pinned deliberately, because it is the cost of open registration: this answer differs from a
+  // successful one, so the route reveals whether an address is registered. There is no way to
+  // hide it without a confirmation email this app cannot send. The alternative is to leave
+  // SIGNUP_OPEN off and add accounts from the Users page — which the cap test above covers.
 });
 
-test('a new account’s data is its own, and invisible to the one that invited it', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+test('a new account’s data is its own, and invisible to everyone else’s', async (t) => {
+  const s = await startServer(OPEN);
   t.after(s.close);
 
   const admin = s.client();
@@ -669,7 +691,7 @@ test('a new account’s data is its own, and invisible to the one that invited i
   await admin('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'AAPL', note: 'mine' }] } });
 
   const visitor = s.client();
-  await visitor('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } });
+  await visitor('/api/signup', { method: 'POST', body: NEWCOMER });
 
   const theirs = (await visitor('/api/settings')).body.watchlist;
   assert.ok(theirs.length > 1 && !theirs.some((w) => w.symbol === 'AAPL'), 'they get the defaults, not the admin’s list');
@@ -683,10 +705,10 @@ test('a new account’s data is its own, and invisible to the one that invited i
 });
 
 test('the admin can still see and manage an account that signed itself up', async (t) => {
-  const s = await startServer({ signupCode: CODE });
+  const s = await startServer(OPEN);
   t.after(s.close);
 
-  await s.client()('/api/signup', { method: 'POST', body: { ...NEWCOMER, code: CODE } });
+  await s.client()('/api/signup', { method: 'POST', body: NEWCOMER });
 
   const admin = s.client();
   await admin.signIn(ADMIN);
@@ -696,7 +718,7 @@ test('the admin can still see and manage an account that signed itself up', asyn
   assert.ok(joined, 'they show up on the Users page like anybody else');
   assert.equal(joined.role, 'member');
 
-  // Including closing the door on one: a code that has leaked is a code you disable people from.
+  // Including shutting one out again: open sign-up means the Users page is the bouncer.
   assert.equal((await admin(`/api/users/${joined.id}`, { method: 'PATCH', body: { disabled: true } })).status, 200);
 });
 

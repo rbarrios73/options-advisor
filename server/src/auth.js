@@ -9,7 +9,7 @@
 // Neither is a password reset flow, because that needs email this app cannot send. An admin sets
 // a new password instead, and doing so ends that account's sessions.
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'oa_session';
 
@@ -98,22 +98,6 @@ export function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Sign in to continue.' });
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Administrators only.' });
   next();
-}
-
-/**
- * Compares a secret with the one that was offered, without leaking how much of it matched.
- *
- * timingSafeEqual needs equal lengths, so both sides are hashed first — that also means a wrong
- * code of a different length takes the same time as a wrong code of the right length. The attack
- * this closes is narrow (guessing an invite code a character at a time over the network), but the
- * fix is four lines and the alternative is reasoning about whether it is exploitable.
- */
-export function secretMatches(offered, expected) {
-  if (!expected) return false;
-
-  const a = createHash('sha256').update(String(offered ?? '')).digest();
-  const b = createHash('sha256').update(String(expected)).digest();
-  return timingSafeEqual(a, b);
 }
 
 /**

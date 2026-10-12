@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
 /**
- * Signing in, and — when the deployment has an invite code — signing up.
+ * Signing in, and — when the deployment has sign-up open — signing up.
  *
  * One card with two modes rather than two pages: they ask for the same two fields, and a separate
  * route for the second would mean a second place to get the cookie handling right.
@@ -19,7 +19,6 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -31,12 +30,12 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme }) {
     setError(null);
 
     try {
-      const { user } = signingUp ? await api.signup({ email, password, code }) : await api.login(email, password);
+      const { user } = signingUp ? await api.signup({ email, password }) : await api.login(email, password);
       onSignedIn(user);
     } catch (e) {
       setError(e.message);
-      // The password goes, the email and code stay. Retyping an address you just got right is
-      // the small indignity every login form inflicts; there is no reason to repeat it here.
+      // The password goes, the email stays. Retyping an address you just got right is the small
+      // indignity every login form inflicts; there is no reason to repeat it here.
       setPassword('');
     } finally {
       setBusy(false);
@@ -112,23 +111,9 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme }) {
           )}
         </label>
 
-        {signingUp && (
-          <label className="field">
-            <span>Invite code</span>
-            <input
-              type="text"
-              autoComplete="off"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              required
-            />
-            <span className="muted small">From whoever runs this copy of the app.</span>
-          </label>
-        )}
-
         {error && <p className="error small">{error}</p>}
 
-        <button className="primary" type="submit" disabled={busy || !email || !password || (signingUp && !code)}>
+        <button className="primary" type="submit" disabled={busy || !email || !password}>
           {busy ? (signingUp ? 'Creating…' : 'Signing in…') : signingUp ? 'Create account' : 'Sign in'}
         </button>
 

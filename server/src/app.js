@@ -12,7 +12,6 @@ import {
   readCookie,
   requireAdmin,
   requireUser,
-  secretMatches,
   sessionCookie,
   sessionUser,
 } from './auth.js';
@@ -75,9 +74,19 @@ export function createApp({ config, db = null }) {
   const currentUserId = (req) => req.user?.id ?? 'local';
   const gate = accounts ? requireUser : (_req, _res, next) => next();
 
-  // Self-registration needs both a code AND accounts: without a database there is nothing to
+  // Self-registration needs SIGNUP_OPEN *and* accounts: without a database there is nothing to
   // register into, and the whole app sits behind one shared password instead.
-  const signupOpen = Boolean(accounts && config.signupCode);
+  const signupConfigured = Boolean(accounts && config.signupOpen);
+
+  /**
+   * Whether the door is actually open right now — the setting AND room under the cap.
+   *
+   * Two conditions rather than one because the second changes while the process runs. A full
+   * deployment stops advertising the tab instead of offering one that refuses; the route keeps
+   * refusing anyway, since a browser can be holding an answer from before it filled up.
+   */
+  const signupAvailable = async () =>
+    signupConfigured && (await users.count()) < config.maxAccounts;
 
   const provider = createProvider(config);
   const scanner = createScanner({ provider, cacheTtlMs: config.cacheTtlMs });
@@ -107,17 +116,20 @@ export function createApp({ config, db = null }) {
 
   // --- who you are, signing in and out -----------------------------------------------------------
 
-  app.get('/api/me', (req, res) => {
-    // Always 200: "nobody is signed in" is an answer, not an error, and the front end needs it to
-    // decide between the app and the sign-in screen.
-    res.json({
-      accounts,
-      user: accounts ? req.user ?? null : { id: 'local', email: null, role: 'admin' },
-      // So the sign-in screen knows whether to offer a door. A closed deployment should not
-      // advertise one that is locked.
-      signupOpen,
-    });
-  });
+  app.get(
+    '/api/me',
+    wrap(async (req, res) => {
+      // Always 200: "nobody is signed in" is an answer, not an error, and the front end needs it
+      // to decide between the app and the sign-in screen.
+      res.json({
+        accounts,
+        user: accounts ? req.user ?? null : { id: 'local', email: null, role: 'admin' },
+        // So the sign-in screen knows whether to offer a door. A closed or full deployment should
+        // not advertise one that is locked.
+        signupOpen: await signupAvailable(),
+      });
+    }),
+  );
 
   if (accounts) {
     app.post(
@@ -137,22 +149,31 @@ export function createApp({ config, db = null }) {
 
     // --- signing up --------------------------------------------------------------------------
     //
-    // Mounted only when SIGNUP_CODE is set. An unconfigured deployment has no route at all, not a
-    // route that refuses — there is nothing to probe and nothing to misconfigure into being open.
+    // Mounted only when SIGNUP_OPEN is true. A deployment that has not opened the door has no
+    // route at all, not a route that refuses — there is nothing to probe and nothing to
+    // misconfigure into being open.
+    //
+    // ONE THING OPEN REGISTRATION COSTS, stated plainly because it cannot be fixed here: this
+    // route tells anyone whether an address already has an account, because "taken" (409) and
+    // "created" (200) are necessarily different answers. The invite code used to hide that by
+    // being checked first. Closing it again needs a confirmation email, which this app cannot
+    // send. If that matters more than the convenience, leave SIGNUP_OPEN off and add accounts
+    // from the Users page.
 
-    if (signupOpen) {
+    if (signupConfigured) {
       app.post(
         '/api/signup',
         // Its own limiter, and a tighter one: creating accounts is rarer than signing in, and
         // this is the endpoint that writes rows.
         loginRateLimit({ attempts: 5, windowMs: 60 * 60_000, what: 'sign-up attempts' }),
         wrap(async (req, res) => {
-          // THE CODE IS CHECKED FIRST, before the email is even looked at. Checking it later
-          // would turn this route into an account-enumeration oracle: "that email already has an
-          // account" is a different answer from "wrong code", and someone without the code could
-          // read the difference.
-          if (!secretMatches(req.body?.code, config.signupCode)) {
-            return res.status(403).json({ error: 'That invite code is not right.' });
+          // THE CAP IS CHECKED FIRST, before the email is even looked at — so a full deployment
+          // gives one answer to everybody and does not become a way to probe the account list
+          // after it has stopped letting people in.
+          if ((await users.count()) >= config.maxAccounts) {
+            return res.status(403).json({
+              error: 'This app is not taking new accounts. Ask whoever runs it to add one for you.',
+            });
           }
 
           // Role is hardcoded, not taken from the body. Nothing a stranger posts should be able
