@@ -398,6 +398,90 @@ otherwise anything entered on a Monday morning quietly lands in the wrong week.
 Each account has its own tracker, in its own table, with a foreign key that takes the rows with
 the account if it is deleted.
 
+A short call also carries an **ex-dividend flag** when a dividend falls before the expiry — see
+the Dividends tab below for why that is a way to lose a position a month early.
+
+## The Dividends tab
+
+Two questions on one page: what the names you follow pay, ranked, and what the shares you hold
+will pay you over the next one to three years.
+
+### What it projects, and what it refuses to
+
+Projecting a **declared** dividend forward is arithmetic. A rate, a cadence and a date give a
+schedule, and the schedule is exact — four payments a year on the quarter, twelve on the month,
+each worth the annual rate divided by the count. That is what the chart and the income figures
+are, and the only assumption in them is that the rate does not change.
+
+Predicting whether a company will **raise or cut** is not arithmetic, and nothing here claims to.
+What the page does instead is show the measurable things that tend to precede a cut, each labelled
+as the observation it is:
+
+- **A cut that already happened.** Derived from the payment history: a calendar year whose total
+  came in under the one before. The strongest signal on the page, because it is a fact rather than
+  an inference. The current year is excluded — three quarters is always less than four, and a
+  naive comparison would report a cut every January.
+- **A yield far above the market's.** Above 10% is reported as "the market expects a cut", because
+  that is usually what a yield like that means. Above 7% is "worth asking why".
+- **A payout above earnings**, where anything supplies an earnings figure. Above 1 means it is
+  paying out more than it earns, which a company can do for a while out of cash and not forever.
+- **A long unbroken record**, which is reported but never *lowers* a reading. Plenty of long
+  streaks ended the quarter after someone pointed out how long they were. Ten clean years does
+  lift a row off "no read on this", because refusing to read a decade of payments is not caution.
+
+The labels are deliberately not "safe" and not "at risk". **Nothing flagged** says what the app
+knows — that none of the three things it can measure is adverse — and promises nothing about next
+quarter. Every reading is a word plus its reasons, never a colour on its own.
+
+This matters more here than anywhere else in the app, because **sorting by yield puts the
+about-to-be-cut names at the top**. A 14% yield is the market saying it does not believe the
+payment, not a bargain nobody noticed. The ranking is by yield, as asked — and the reason sits in
+the same glance.
+
+### Where the numbers come from
+
+Prices and payment histories come from your data provider. Tradier's dividend endpoint is in
+**beta and gated to brokerage accounts**, so the sandbox returns 403 or 404 — which the adapter
+treats as an answer rather than a fault. Three states, and they are not interchangeable:
+
+| What comes back | What it means | What the page does |
+|---|---|---|
+| payments | this is what it pays | reads the rate, cadence, next date and streak off them |
+| an empty list | this pays no dividend | says "pays no dividend" and asks for nothing |
+| nothing at all | the account may not ask | offers you the box to type the rate in |
+
+A typed rate stays stored underneath. If the provider later gains the endpoint, its figure takes
+over — a rate it reports is this quarter's, and one you typed is from whenever you typed it — and
+the typed value comes back the moment the provider stops answering. Each row says which of the two
+it is reading.
+
+Everything derived is computed per request and never stored: a rate saved in January is wrong by
+April. The stored half is just shares, average cost, and the rate for anything the provider cannot
+tell us.
+
+### Ex-dividend and short calls
+
+The one place dividends reach the options side, and a real way to lose money by surprise. An
+in-the-money short call is assigned the day **before** an ex-date when the dividend is worth more
+than the time value left in the contract, because exercising to collect the dividend then beats
+selling it. You wake up short the stock and owing the payment.
+
+So the Positions tab flags any open call position with an ex-date before its expiry. Where the
+chain gives a quote for the short leg, it compares the dividend against the extrinsic value left
+and says assignment is *likely* rather than merely possible. Puts are never flagged: a put cannot
+be called away to collect a dividend.
+
+### The chart
+
+One series — projected income by month — so there is no legend; the heading names it. Months with
+no payment are drawn as empty slots rather than skipped, because a quarterly payer puts money in
+your account four times a year and hiding the gaps would make it look monthly. The shape of the
+gaps *is* the information.
+
+The tallest month is labelled directly, and only when there is exactly one tallest month: a
+monthly payer makes every column equal, and "label the tallest" then writes the same figure over
+all thirty-six of them, which is what it did the first time it ran.
+
 ## The Ticker tab
 
 Look up one symbol: what it costs now, and what it has done — the price page a screener sends
@@ -603,6 +687,18 @@ premium moves a goal and only on the day it was settled, that an assignment loss
 net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
+
+For dividends: that a blank box is not a figure of zero (an unset rate is not a rate of nothing);
+that "2026-02-31" is dropped rather than rolled forward to 3 March, which `Date.parse` does
+happily and a DATE column does not; that a stored ex-date in the past is carried forward instead
+of being reported as income still to come; that the cadence is read off the gaps between payments
+rather than off a field providers spell three different ways; that the rate quoted is the latest
+payment annualised and not the trailing year, which is the difference that matters in the quarter
+after a cut; that the current year never counts as a cut just for being unfinished; that a cut
+outranks a forty-year streak and the streak never cancels it; that every risk level carries words
+rather than a colour; that a short call before an ex-date is flagged while a put never is; and
+that ranking by symbol actually re-ranks — `key[by] ?? key.yield` read a deliberate null picker as
+"no such key" and silently sorted by yield instead.
 
 For sign-up: that a closed deployment has no route at all rather than one that refuses; that only
 the exact string `true` opens it, checked against the values a dashboard actually produces

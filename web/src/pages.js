@@ -7,6 +7,7 @@ export const PAGES = {
   screener: { label: 'Screener' },
   watchlist: { label: 'Watchlist' },
   positions: { label: 'Positions' },
+  dividends: { label: 'Dividends' },
   ticker: { label: 'Ticker' },
   simulator: { label: 'Simulator' },
 

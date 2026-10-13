@@ -22,6 +22,12 @@ export function createTradierProvider({ token, mode = 'sandbox', fetchImpl = fet
 
   const base = mode === 'live' ? LIVE_BASE : SANDBOX_BASE;
 
+  // The fundamentals endpoints hang off /beta rather than /v1, and they are gated: they answer for
+  // brokerage account holders and 403 or 404 for everyone else, the sandbox included. That is why
+  // getDividends below returns null rather than throwing — "your plan does not have this" is an
+  // answer the app is built to carry on from, not a fault.
+  const betaBase = base.replace(/\/v1$/, '/beta');
+
   async function call(path, params) {
     const url = new URL(base + path);
     for (const [k, v] of Object.entries(params ?? {})) {
@@ -99,6 +105,58 @@ export function createTradierProvider({ token, mode = 'sandbox', fetchImpl = fet
         .filter((d) => d.date && d.close > 0);
     },
 
+    /**
+     * Past cash dividends, newest last, or null when this account cannot read them.
+     *
+     * Null is load-bearing: it is the difference between "this symbol pays nothing" (an empty
+     * array) and "I am not allowed to ask" (null), and the screen says something different for
+     * each — the second offers you the box to type the rate in yourself.
+     *
+     * The response is nested three deep and the shape varies by symbol, so every level is reached
+     * for defensively. An ETF and a share come back differently, and a symbol with one payment
+     * comes back as an object where one with twelve comes back as an array.
+     */
+    async getDividends(symbol) {
+      const url = new URL(`${betaBase}/markets/fundamentals/dividends`);
+      url.searchParams.set('symbols', symbol);
+
+      const response = await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      });
+
+      // 403 is "not on your plan", 404 is "not on this environment" — the sandbox answers one of
+      // them. Neither is worth an error on a page that works without this.
+      if (response.status === 403 || response.status === 404) return null;
+      if (response.status === 401) {
+        throw new Error('Tradier rejected the token (401). Check TRADIER_TOKEN and TRADIER_MODE.');
+      }
+      if (!response.ok) return null;
+
+      const data = await response.json().catch(() => null);
+      const entries = [];
+
+      for (const item of asArray(data)) {
+        for (const result of asArray(item?.results)) {
+          for (const row of asArray(result?.tables?.cash_dividends)) {
+            const amount = num(row?.cash_amount);
+            if (!row?.ex_date || amount === null) continue;
+
+            entries.push({
+              exDate: String(row.ex_date).slice(0, 10),
+              payDate: row.pay_date ? String(row.pay_date).slice(0, 10) : null,
+              amount,
+            });
+          }
+        }
+      }
+
+      // De-duplicated: the same payment can appear under both the share and the ADR entry.
+      const seen = new Map();
+      for (const e of entries) seen.set(`${e.exDate}|${e.amount}`, e);
+
+      return [...seen.values()].sort((a, b) => a.exDate.localeCompare(b.exDate));
+    },
+
     async getExpirations(symbol) {
       const data = await call('/markets/options/expirations', {
         symbol,
@@ -166,3 +224,6 @@ function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Tradier returns a bare object where a list has one element. This flattens that away. */
+const asArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);

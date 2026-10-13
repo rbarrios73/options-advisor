@@ -9,6 +9,20 @@ const has = (v) => typeof v === 'number' && Number.isFinite(v);
 export const money = (v) =>
   has(v) ? v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : '—';
 
+/**
+ * Money where the cents matter. `money` rounds them away, which is right for a position's premium
+ * and wrong for a dividend: $0.26 a share is the whole figure, and rounding it reads as nothing.
+ */
+export const cash = (v, dp = 2) =>
+  has(v)
+    ? v.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: dp,
+        maximumFractionDigits: dp,
+      })
+    : '—';
+
 export const price = (v) => (has(v) ? v.toFixed(2) : '—');
 
 export const pct = (v, dp = 1) => (has(v) ? `${(v * 100).toFixed(dp)}%` : '—');

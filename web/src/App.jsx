@@ -9,6 +9,7 @@ import SimulatorPage from './pages/SimulatorPage.jsx';
 import TickerPage from './pages/TickerPage.jsx';
 import WatchlistPage from './pages/WatchlistPage.jsx';
 import PositionsPage from './pages/PositionsPage.jsx';
+import DividendsPage from './pages/DividendsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
@@ -225,6 +226,8 @@ export default function App() {
         />
       ) : page === 'positions' ? (
         <PositionsPage />
+      ) : page === 'dividends' ? (
+        <DividendsPage />
       ) : page === 'ticker' ? (
         <TickerPage
           key={route.params.symbol ?? ''}

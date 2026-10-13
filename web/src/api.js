@@ -40,6 +40,14 @@ export const api = {
   deletePosition: (id) => fetch(`/api/positions/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json),
   saveGoals: (goals) => send('/api/goals', 'PUT', { goals }),
 
+  // The dividend screen. The GET carries everything computed — rates, yields, the schedule —
+  // because all of it is derived from a price and a payment history that change under you.
+  dividends: ({ months, sort } = {}) =>
+    fetch(`/api/dividends?months=${encodeURIComponent(months ?? 12)}&sort=${encodeURIComponent(sort ?? 'yield')}`).then(json),
+  saveHolding: (symbol, holding) => send(`/api/dividends/${encodeURIComponent(symbol)}`, 'PUT', holding),
+  deleteHolding: (symbol) =>
+    fetch(`/api/dividends/${encodeURIComponent(symbol)}`, { method: 'DELETE' }).then(json),
+
   /** Light, dark or system — kept on the account so it follows you to another browser. */
   saveTheme: (theme) => send('/api/theme', 'PUT', { theme }),
 

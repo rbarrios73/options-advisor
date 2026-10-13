@@ -8,27 +8,34 @@
 import { normalCdf } from '../domain/math.js';
 import { unknownSymbol } from './errors.js';
 
+// `div` is the synthetic dividend profile: the current annual rate per share, how often it is
+// paid, and how fast it grew getting here (used to walk the history backwards). `cut` marks a year
+// whose payments came in low, so the screen's "this was cut once" path is exercised by something
+// other than a test fixture. Omit `div` entirely and the symbol pays nothing, which is also a
+// state the page has to handle.
 const UNIVERSE = {
-  SPY: { spot: 552.4, baseIv: 0.14 },
-  QQQ: { spot: 486.1, baseIv: 0.19 },
-  IWM: { spot: 221.7, baseIv: 0.22 },
-  AAPL: { spot: 238.6, baseIv: 0.27 },
-  NVDA: { spot: 174.3, baseIv: 0.46 },
+  SPY: { spot: 552.4, baseIv: 0.14, div: { rate: 7.0, frequency: 'quarterly', growth: 0.05 } },
+  QQQ: { spot: 486.1, baseIv: 0.19, div: { rate: 2.9, frequency: 'quarterly', growth: 0.08 } },
+  IWM: { spot: 221.7, baseIv: 0.22, div: { rate: 2.8, frequency: 'quarterly', growth: 0.04 } },
+  AAPL: { spot: 238.6, baseIv: 0.27, div: { rate: 1.08, frequency: 'quarterly', growth: 0.05 } },
+  NVDA: { spot: 174.3, baseIv: 0.46, div: { rate: 0.04, frequency: 'quarterly', growth: 0.0 } },
   TSLA: { spot: 412.8, baseIv: 0.55 },
   AMD: { spot: 168.2, baseIv: 0.44 },
-  MSFT: { spot: 512.9, baseIv: 0.21 },
+  MSFT: { spot: 512.9, baseIv: 0.21, div: { rate: 3.32, frequency: 'quarterly', growth: 0.1 } },
 
   // The sector and asset-class ETFs on the default watchlist, so a mock run exercises the same
   // list the app ships with rather than reporting half of it as missing. The vols are plausible
   // relative orderings — gold and bonds quieter than equities, energy noisier — not forecasts.
-  XLF: { spot: 52.8, baseIv: 0.19 },
-  XLE: { spot: 91.4, baseIv: 0.25 },
-  XLV: { spot: 148.3, baseIv: 0.16 },
-  GLD: { spot: 246.7, baseIv: 0.15 },
-  TLT: { spot: 88.9, baseIv: 0.14 },
-  EEM: { spot: 47.2, baseIv: 0.2 },
-  XLY: { spot: 224.6, baseIv: 0.21 },
+  XLF: { spot: 52.8, baseIv: 0.19, div: { rate: 1.0, frequency: 'quarterly', growth: 0.06 } },
+  XLE: { spot: 91.4, baseIv: 0.25, div: { rate: 3.2, frequency: 'quarterly', growth: 0.03, cut: { yearsAgo: 5, by: 0.35 } } },
+  XLV: { spot: 148.3, baseIv: 0.16, div: { rate: 1.9, frequency: 'quarterly', growth: 0.05 } },
+  GLD: { spot: 246.7, baseIv: 0.15 }, // bullion pays nothing, and the page should say so plainly
+  TLT: { spot: 88.9, baseIv: 0.14, div: { rate: 3.5, frequency: 'monthly', growth: 0.02 } },
+  EEM: { spot: 47.2, baseIv: 0.2, div: { rate: 1.1, frequency: 'semiannual', growth: 0.03, cut: { yearsAgo: 2, by: 0.22 } } },
+  XLY: { spot: 224.6, baseIv: 0.21, div: { rate: 1.6, frequency: 'quarterly', growth: 0.07 } },
 };
+
+const PER_YEAR = { monthly: 12, quarterly: 4, semiannual: 2, annual: 1 };
 
 export function createMockProvider({ today = new Date() } = {}) {
   return {
@@ -87,6 +94,23 @@ export function createMockProvider({ today = new Date() } = {}) {
       if (!base) throw unknownSymbol(symbol, 'The mock provider');
 
       return buildHistory(key, base, { start, end, interval }, today);
+    },
+
+    /**
+     * Twelve years of synthetic payments, oldest first — the same shape Tradier's fundamentals
+     * endpoint is normalised into, so the screen cannot tell which one it is reading.
+     *
+     * An empty array for a symbol that pays nothing, which is a different answer from the null a
+     * real provider gives when the account is not allowed to ask. Both reach the page, and the
+     * page says something different for each.
+     */
+    async getDividends(symbol) {
+      const key = symbol.toUpperCase();
+      const base = UNIVERSE[key];
+      if (!base) throw unknownSymbol(symbol, 'The mock provider');
+      if (!base.div) return [];
+
+      return buildDividends(key, base.div, today);
     },
 
     async getChain(symbol, expiration, spot) {
@@ -152,6 +176,49 @@ function buildHistory(key, base, { start, end, interval = 'daily' }, today) {
   }
 
   return bars.reverse();
+}
+
+/**
+ * Walks a dividend history backwards from today's rate, shrinking by the growth rate each year —
+ * so the newest payment matches `rate / perYear` exactly and the older ones are smaller, which is
+ * what a company that has been raising its dividend looks like.
+ *
+ * The most recent ex-date is deliberately in the PAST (one period back from today's point in the
+ * cycle), because that is what a provider returns: the next one has not happened yet, and working
+ * it out is the app's job, not the data's.
+ */
+function buildDividends(key, { rate, frequency, growth = 0, cut }, today) {
+  const per = PER_YEAR[frequency] ?? 4;
+  const monthsApart = 12 / per;
+  const current = rate / per;
+
+  const out = [];
+  const d = new Date(today);
+  // A day of the month seeded from the symbol, so the names do not all go ex on the same date —
+  // which they visibly did at first, and which made the calendar on the screen look like a bug.
+  // Capped at 28 so adding whole months never lands on a day that does not exist.
+  d.setUTCDate(3 + Math.floor(seeded(key)() * 25));
+  d.setUTCMonth(d.getUTCMonth() - monthsApart);
+
+  for (let i = 0; i < per * 12; i++) {
+    const yearsBack = i / per;
+    let amount = current / (1 + growth) ** yearsBack;
+
+    // A year that came in low, and recovered after. This is what the "cut in 2021" line on the
+    // screen is reading when it is reading mock data.
+    if (cut && yearsBack >= cut.yearsAgo && yearsBack < cut.yearsAgo + 1) amount *= 1 - cut.by;
+
+    out.push({
+      exDate: d.toISOString().slice(0, 10),
+      // Paid a fortnight after it goes ex, which is the usual gap.
+      payDate: new Date(d.getTime() + 14 * 86_400_000).toISOString().slice(0, 10),
+      amount: Math.round(amount * 10000) / 10000,
+    });
+
+    d.setUTCMonth(d.getUTCMonth() - monthsApart);
+  }
+
+  return out.reverse();
 }
 
 const iso = (date) => new Date(date).toISOString().slice(0, 10);

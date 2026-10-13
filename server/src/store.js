@@ -24,6 +24,7 @@ import {
   uniqueName,
 } from './domain/watchlist.js';
 import { cleanGoals, cleanPosition, sortPositions } from './domain/positions.js';
+import { MAX_HOLDINGS, cleanHolding } from './domain/dividends.js';
 import { cleanTheme } from './domain/theme.js';
 
 /** Raised by either store when a request is refused for a reason worth telling the user. */
@@ -90,7 +91,7 @@ export function createFileStore(file) {
     try {
       cache = upgradeFile(JSON.parse(await readFile(file, 'utf8')));
     } catch {
-      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {}, positions: [] };
+      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {}, positions: [], holdings: [] };
     }
     return cache;
   }
@@ -219,6 +220,42 @@ export function createFileStore(file) {
       if (!(state.positions ?? []).some((p) => p.id === id)) throw new StoreError('No such position.', 404);
       await save({ ...state, positions: state.positions.filter((p) => p.id !== id) });
     },
+
+    // --- dividend holdings --------------------------------------------------------------------
+    //
+    // Keyed by symbol rather than by a generated id: you hold one line of AAPL, not three, and a
+    // symbol is the thing the page looks it up by. Saving the same symbol twice updates it.
+
+    async listHoldings() {
+      return [...((await load()).holdings ?? [])].sort((a, b) => a.symbol.localeCompare(b.symbol));
+    },
+
+    async saveHolding(_userId, raw) {
+      const clean = cleanHolding(raw);
+      if (!clean) throw new StoreError('That is not a symbol I can track.', 400);
+
+      const state = await load();
+      const holdings = state.holdings ?? [];
+
+      if (holdings.length >= MAX_HOLDINGS && !holdings.some((h) => h.symbol === clean.symbol)) {
+        throw new StoreError(`That is the limit of ${MAX_HOLDINGS} holdings.`, 409);
+      }
+
+      await save({
+        ...state,
+        holdings: holdings.some((h) => h.symbol === clean.symbol)
+          ? holdings.map((h) => (h.symbol === clean.symbol ? clean : h))
+          : [...holdings, clean],
+      });
+      return clean;
+    },
+
+    async deleteHolding(_userId, symbol) {
+      const state = await load();
+      const key = String(symbol ?? '').toUpperCase();
+      if (!(state.holdings ?? []).some((h) => h.symbol === key)) throw new StoreError('No such holding.', 404);
+      await save({ ...state, holdings: state.holdings.filter((h) => h.symbol !== key) });
+    },
   };
 }
 
@@ -238,6 +275,7 @@ function upgradeFile(stored) {
       activeId: stored.activeId ?? null,
       settings: stored.settings ?? {},
       positions: (stored.positions ?? []).map((p) => ({ id: p.id ?? randomUUID(), ...cleanPosition(p) })).filter((p) => p.symbol),
+      holdings: (stored.holdings ?? []).map(cleanHolding).filter(Boolean),
     };
   }
 
@@ -247,6 +285,7 @@ function upgradeFile(stored) {
     activeId: null,
     settings: { ...rest, filters, weights },
     positions: [],
+    holdings: [],
   };
 }
 
@@ -522,6 +561,57 @@ export function createDbStore(db) {
     async deletePosition(userId, id) {
       const { rowCount } = await db.query(`DELETE FROM positions WHERE id = $1 AND user_id = $2`, [id, userId]);
       if (!rowCount) throw new StoreError('No such position.', 404);
+    },
+
+    // --- dividend holdings --------------------------------------------------------------------
+
+    async listHoldings(userId) {
+      const { rows } = await db.query(
+        `SELECT symbol,
+                shares::float8      AS shares,
+                cost_basis::float8  AS "costBasis",
+                annual_rate::float8 AS "annualRate",
+                frequency,
+                to_char(next_ex_date, 'YYYY-MM-DD') AS "nextExDate",
+                note
+         FROM dividend_holdings WHERE user_id = $1 ORDER BY symbol`,
+        [userId],
+      );
+      return rows;
+    },
+
+    /** Insert or update, keyed on the symbol — one line per symbol per account. */
+    async saveHolding(userId, raw) {
+      const clean = cleanHolding(raw);
+      if (!clean) throw new StoreError('That is not a symbol I can track.', 400);
+
+      const { rows } = await db.query(
+        `SELECT count(*)::int AS n FROM dividend_holdings WHERE user_id = $1 AND symbol <> $2`,
+        [userId, clean.symbol],
+      );
+      if (rows[0].n >= MAX_HOLDINGS) throw new StoreError(`That is the limit of ${MAX_HOLDINGS} holdings.`, 409);
+
+      await db.query(
+        `INSERT INTO dividend_holdings
+           (user_id, symbol, shares, cost_basis, annual_rate, frequency, next_ex_date, note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (user_id, symbol) DO UPDATE SET
+           shares = EXCLUDED.shares, cost_basis = EXCLUDED.cost_basis,
+           annual_rate = EXCLUDED.annual_rate, frequency = EXCLUDED.frequency,
+           next_ex_date = EXCLUDED.next_ex_date, note = EXCLUDED.note,
+           updated_at = now()`,
+        [userId, clean.symbol, clean.shares, clean.costBasis, clean.annualRate, clean.frequency, clean.nextExDate, clean.note],
+      );
+
+      return clean;
+    },
+
+    async deleteHolding(userId, symbol) {
+      const { rowCount } = await db.query(
+        `DELETE FROM dividend_holdings WHERE user_id = $1 AND symbol = $2`,
+        [userId, String(symbol ?? '').toUpperCase()],
+      );
+      if (!rowCount) throw new StoreError('No such holding.', 404);
     },
   };
 }

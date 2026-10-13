@@ -40,9 +40,9 @@ export function selectExpirations(expirations, filters, asOf) {
 export function createScanner({ provider, cacheTtlMs = 300_000 }) {
   const cache = new Map();
 
-  async function cached(key, produce) {
+  async function cached(key, produce, ttlMs = cacheTtlMs) {
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < cacheTtlMs) return hit.value;
+    if (hit && Date.now() - hit.at < ttlMs) return hit.value;
 
     const value = await produce();
     cache.set(key, { at: Date.now(), value });
@@ -82,6 +82,16 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
         provider.getHistory(symbol, { start, end, interval }),
       ),
     expirations: (symbol) => cached(`exp:${symbol}`, () => provider.getExpirations(symbol)),
+
+    /**
+     * Past dividends, or null when the provider has no such endpoint or the account cannot read
+     * it. Cached for a day rather than for the usual few minutes: a dividend history changes four
+     * times a year, and the dividend screen reads a whole watchlist on every open.
+     */
+    dividends: (symbol) =>
+      provider.getDividends
+        ? cached(`div:${symbol}`, () => provider.getDividends(symbol), 86_400_000)
+        : Promise.resolve(null),
     async chain(symbol, expiration) {
       const quote = await cached(`quote:${symbol}`, () => provider.getQuote(symbol));
       const chain = await cached(`chain:${symbol}:${expiration}`, () =>

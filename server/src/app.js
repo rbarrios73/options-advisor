@@ -34,6 +34,19 @@ import {
   daysLeft,
   premiumTotals,
 } from './domain/positions.js';
+import {
+  DEFAULT_HORIZON,
+  HORIZONS,
+  annualIncome,
+  cutRisk,
+  exDividendWarning,
+  perPayment,
+  projectIncome,
+  sortHoldings,
+  summariseHistory,
+  totals as dividendTotals,
+  yieldOf,
+} from './domain/dividends.js';
 import { createAdvisor } from './advisor.js';
 
 /**
@@ -446,6 +459,130 @@ export function createApp({ config, db = null }) {
     }),
   );
 
+  // --- the dividend screen ------------------------------------------------------------------------
+  //
+  // Two things on one page: what the names you follow pay, ranked, and what the shares you hold
+  // will pay you over the next year or three. The stored half is small — shares, cost, and the
+  // rate for anything the provider cannot tell us. Everything else is computed per request from
+  // the provider's payment history, because a rate saved in January is wrong by April.
+
+  /**
+   * Builds one row per symbol: what it pays, where that came from, and what it is worth to you.
+   *
+   * Fails soft per symbol, like the tracker does. A provider that cannot price one name should
+   * cost that row its price, not empty the table.
+   */
+  async function dividendRows(userId, { months, asOf }) {
+    const [holdings, state] = await Promise.all([store.listHoldings(userId), store.read(userId)]);
+
+    const bySymbol = new Map(holdings.map((h) => [h.symbol, h]));
+    const watched = (state.watchlist ?? []).map((e) => e.symbol);
+
+    // Everything you hold, plus everything on the active list — the first is the forecast, the
+    // second is the screen, and a symbol in both appears once.
+    const symbols = [...new Set([...bySymbol.keys(), ...watched])].slice(0, 80);
+
+    const rows = [];
+    for (const symbol of symbols) {
+      const held = bySymbol.get(symbol) ?? null;
+
+      const [quote, history] = await Promise.all([
+        scanner.quote(symbol).catch(() => null),
+        scanner.dividends(symbol).catch(() => null),
+      ]);
+
+      // Three different answers, and they are not interchangeable: an array with payments in it,
+      // an empty array (this pays nothing — GLD, say), and null (the provider has no such endpoint
+      // or this account may not read it). Only the third is a reason to offer the typing form.
+      const availability = history === null ? 'unavailable' : history.length === 0 ? 'never' : 'ok';
+      const derived = availability === 'ok' ? summariseHistory(history, { asOf }) : null;
+
+      // The provider wins when it has an answer, because a rate it reports is this quarter's and a
+      // rate you typed is from whenever you typed it. What you typed stays stored underneath, and
+      // comes back the moment the provider stops answering.
+      const figures = derived ?? {
+        annualRate: held?.annualRate ?? null,
+        frequency: held?.frequency ?? 'quarterly',
+        nextExDate: held?.nextExDate ?? null,
+        trailing12m: null,
+        lastExDate: null,
+        streakYears: null,
+        lastCut: null,
+        payments: 0,
+      };
+
+      const source = derived ? 'provider' : figures.annualRate !== null ? 'typed' : 'none';
+      const price = quote?.last ?? null;
+      const shares = held?.shares ?? null;
+
+      const row = {
+        symbol,
+        description: quote?.description ?? null,
+        price,
+        change: quote?.change ?? null,
+        changePct: quote?.changePct ?? null,
+        ...figures,
+        source,
+        availability,
+        tracked: Boolean(held),
+        onWatchlist: watched.includes(symbol),
+        shares,
+        costBasis: held?.costBasis ?? null,
+        note: held?.note ?? '',
+        perPayment: perPayment(figures.annualRate, figures.frequency),
+        yield: yieldOf(figures.annualRate, price),
+        yieldOnCost: yieldOf(figures.annualRate, held?.costBasis),
+        annualIncome: annualIncome(shares, figures.annualRate),
+        risk: cutRisk({ ...figures, price }),
+      };
+
+      row.projected = projectIncome({ ...row, shares }, { months, asOf });
+      rows.push(row);
+    }
+
+    return rows;
+  }
+
+  app.get(
+    '/api/dividends',
+    gate,
+    wrap(async (req, res) => {
+      const months = HORIZONS.includes(Number(req.query.months)) ? Number(req.query.months) : DEFAULT_HORIZON;
+      const asOf = today();
+
+      const rows = await dividendRows(currentUserId(req), { months, asOf });
+
+      res.json({
+        asOf,
+        months,
+        horizons: HORIZONS,
+        rows: sortHoldings(rows, String(req.query.sort ?? 'yield')),
+        totals: dividendTotals(rows, { months, asOf }),
+      });
+    }),
+  );
+
+  app.put(
+    '/api/dividends/:symbol',
+    gate,
+    wrap(async (req, res) => {
+      const saved = await store.saveHolding(currentUserId(req), {
+        ...req.body,
+        symbol: req.params.symbol,
+      });
+      res.json(saved);
+    }),
+  );
+
+  app.delete(
+    '/api/dividends/:symbol',
+    gate,
+    wrap(async (req, res) => {
+      await store.deleteHolding(currentUserId(req), req.params.symbol);
+      res.json({ ok: true });
+    }),
+  );
+
   app.put(
     '/api/theme',
     gate,
@@ -500,6 +637,18 @@ export function createApp({ config, db = null }) {
       }
     }
 
+    // Dividends only matter to the call side, so only those symbols are asked about. Cached for a
+    // day in the scanner, and null for any provider without the endpoint, so this is usually free.
+    const dividends = new Map();
+    for (const symbol of symbols) {
+      if (!open.some((p) => p.symbol === symbol && POSITION_TYPES[p.type]?.side === 'call')) continue;
+      try {
+        dividends.set(symbol, summariseHistory(await scanner.dividends(symbol), { asOf }));
+      } catch {
+        dividends.set(symbol, null);
+      }
+    }
+
     return positions.map((position) => {
       const quote = quotes.get(position.symbol) ?? null;
       const spot = quote?.last ?? null;
@@ -519,8 +668,42 @@ export function createApp({ config, db = null }) {
         delta: leg?.delta ?? null,
         daysLeft: daysLeft(position.expiration, asOf),
         breach: spot == null ? null : breachOf(position, spot),
+        // Why a short call can be taken off you a month early. Only ever set on the call side,
+        // only when an ex-date falls before the expiry, and only while the position is open.
+        exDividend:
+          position.status !== 'open'
+            ? null
+            : exDividendWarning(
+                {
+                  side,
+                  expiration: position.expiration,
+                  nextExDate: dividends.get(position.symbol)?.nextExDate ?? null,
+                  perShare: perPayment(
+                    dividends.get(position.symbol)?.annualRate,
+                    dividends.get(position.symbol)?.frequency,
+                  ),
+                  extrinsic: extrinsicOf(leg, spot, position.shortStrike, side),
+                },
+                asOf,
+              ),
       };
     });
+  }
+
+  /**
+   * What is left in a short call above its intrinsic value — the amount an early assignment would
+   * throw away, and so the number the dividend has to beat for one to make sense.
+   *
+   * The mid, not the last: a stale last trade on a quiet strike makes this say the opposite of
+   * what it should.
+   */
+  function extrinsicOf(leg, spot, strike, side) {
+    if (!leg || side !== 'call' || !(spot > 0) || !(strike > 0)) return null;
+
+    const mid = (Number(leg.bid ?? 0) + Number(leg.ask ?? 0)) / 2;
+    if (!(mid > 0)) return null;
+
+    return Math.max(0, Math.round((mid - Math.max(0, spot - strike)) * 100) / 100);
   }
 
   // --- the advisor ------------------------------------------------------------------------------

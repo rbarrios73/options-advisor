@@ -168,6 +168,33 @@ export async function migrate(db) {
   // that runs on every page load.
   await db.query(`CREATE INDEX IF NOT EXISTS positions_closed ON positions (user_id, closed_at)`);
 
+  // Shares you hold for the dividend, and what you know about the payment. Separate from both the
+  // watchlist and from positions: a watchlist entry is a name to look at and a position is an
+  // options trade, while this is stock you own and the schedule it pays on.
+  //
+  // Every figure except the symbol is nullable, deliberately. A row with nothing but a symbol is a
+  // useful row — it still gets the provider's rate and shows you the yield; the share count is
+  // what turns a yield into an income, and plenty of people want the first without the second.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dividend_holdings (
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      symbol       TEXT NOT NULL,
+      shares       NUMERIC,
+      cost_basis   NUMERIC,
+      -- Dollars per share per YEAR, filled in by hand when the provider cannot say. One unit, so
+      -- a quarterly payer and a monthly one are comparable without reading the frequency first.
+      annual_rate  NUMERIC,
+      frequency    TEXT NOT NULL DEFAULT 'quarterly',
+      next_ex_date DATE,
+      note         TEXT NOT NULL DEFAULT '',
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  // A unique index rather than a primary key, so this is idempotent on a database that already
+  // has the table — the same reason the watchlist is keyed this way.
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS dividend_holdings_key ON dividend_holdings (user_id, symbol)`);
+
   await moveWatchlistsOutOfSettings(db);
 }
 

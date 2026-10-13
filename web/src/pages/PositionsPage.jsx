@@ -370,6 +370,18 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         <td className={expiringSoon ? 'nowrap warn-text' : 'nowrap'}>
           {shortDate(position.expiration)}
           {position.status === 'open' && <span className="muted small"> {position.daysLeft}d</span>}
+          {/* A short call can be taken off you the day before an ex-dividend date, a month before
+              this expiry, if the dividend beats the time value left. Worth seeing on the row
+              rather than discovering from a broker email. */}
+          {position.exDividend && (
+            <span
+              className={position.exDividend.likely ? 'ex-div likely' : 'ex-div'}
+              title={position.exDividend.text}
+            >
+              Ex-div {shortDate(position.exDividend.exDate)}
+              {position.exDividend.likely ? ' · assignment likely' : ''}
+            </span>
+          )}
         </td>
         <td className="num">{price(position.spot)}</td>
         <td className="small muted nowrap">{earnings ? shortDate(earnings) : '—'}</td>

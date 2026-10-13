@@ -917,3 +917,74 @@ tr.settle-row td { background: var(--sunken); white-space: normal; }
 /* A hint under the input it belongs to, rather than beside the label — the label says what the
    field is, the hint says what will be accepted. */
 .signin-card .field .small { margin-top: 2px; }
+
+/* --- dividends -------------------------------------------------------------------------------- */
+
+.dividend-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.dividend-controls > button { margin-left: auto; }
+
+.chart-heading { margin: 0 0 8px; font-size: 13px; }
+
+/* One series, so the colour is not carrying identity — the heading names it. The value label on
+   the tallest column wears text ink rather than the series colour, like every other number here. */
+.income-chart { margin: 0; }
+.income-chart svg { width: 100%; height: auto; display: block; }
+.income-chart figcaption { margin-top: 4px; min-height: 16px; }
+
+.chart-value { fill: var(--text); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+table.dividend-table { width: 100%; }
+table.dividend-table td { vertical-align: top; }
+table.dividend-table .row-actions { flex-wrap: nowrap; }
+
+/* A row with no rate yet is still a row worth seeing — recessive, not hidden. */
+table.dividend-table tr.quiet td { color: var(--text-secondary); }
+table.dividend-table tr.quiet strong { color: var(--text-secondary); }
+
+/* The risk reading. The border is a second channel on top of the word, never instead of it: the
+   word is what makes this readable without colour, and the colour is what makes it quick. */
+.risk { border-left: 3px solid var(--line); padding-left: 7px; min-width: 190px; }
+.risk-label { display: block; font-size: 12px; }
+.risk-why { display: block; line-height: 1.35; margin-top: 1px; }
+
+.risk-covered { border-left-color: var(--good); }
+.risk-watch { border-left-color: var(--warn); }
+.risk-stretched { border-left-color: var(--bad); }
+.risk-covered .risk-label { color: var(--good); }
+.risk-watch .risk-label { color: var(--warn); }
+.risk-stretched .risk-label { color: var(--bad); }
+.risk-unknown .risk-label { color: var(--muted); }
+
+.holding-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px 14px;
+}
+.holding-form .field { flex: 1 1 170px; }
+.holding-form .field.wide { flex: 2 1 320px; }
+.holding-form .provider-note { flex: 2 1 320px; margin: 0 0 6px; line-height: 1.4; }
+.holding-form .row-actions { flex: 0 0 auto; }
+
+.footnote { max-width: 80ch; margin-top: 14px; line-height: 1.45; }
+
+/* The ex-dividend flag on the tracker — the one place dividends reach the options pages. */
+.ex-div { display: block; margin-top: 3px; color: var(--warn); font-size: 10px; line-height: 1.35; }
+.ex-div.likely { font-weight: 600; }
+
+@media (max-width: 720px) {
+  .dividend-controls > button { margin-left: 0; }
+  .risk { min-width: 0; border-left-width: 4px; }
+  /* The reasons line wraps to three lines on a phone and turns a ten-row table into a scroll.
+     The label stays — it is what makes the reading legible without colour — and the reasons move
+     into the cell's title. */
+  .risk-why { display: none; }
+  table.dividend-table td { padding-top: 6px; padding-bottom: 6px; }
+}

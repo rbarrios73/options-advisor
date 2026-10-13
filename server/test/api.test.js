@@ -722,6 +722,248 @@ test('the admin can still see and manage an account that signed itself up', asyn
   assert.equal((await admin(`/api/users/${joined.id}`, { method: 'PATCH', body: { disabled: true } })).status, 200);
 });
 
+// --- the dividend screen --------------------------------------------------------------------------
+
+test('the screen covers the watchlist and the holdings, and reads the provider for both', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const { status, body } = await me('/api/dividends');
+  assert.equal(status, 200);
+
+  // The default watchlist is ten names, and every one of them appears whether or not it is held.
+  assert.equal(body.rows.length, 10);
+  assert.equal(body.months, 12);
+
+  const spy = body.rows.find((r) => r.symbol === 'SPY');
+  assert.equal(spy.source, 'provider', 'the mock provider has a payment history');
+  assert.ok(spy.annualRate > 0);
+  assert.equal(spy.frequency, 'quarterly');
+  assert.ok(spy.nextExDate > body.asOf, 'the next ex-date is in the future');
+  assert.ok(spy.yield > 0 && spy.yield < 0.1);
+  assert.ok(spy.risk.label, 'and a risk reading in words');
+});
+
+test('a symbol that pays nothing says so, and is not confused with one we cannot ask about', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const { rows } = (await me('/api/dividends')).body;
+  const gld = rows.find((r) => r.symbol === 'GLD');
+
+  // Bullion pays no dividend. That is an answer from the provider, not a gap in the data, and the
+  // page says something different for each.
+  assert.equal(gld.availability, 'never');
+  assert.equal(gld.annualRate, null, 'not zero');
+  assert.equal(gld.yield, null);
+  assert.equal(gld.source, 'none');
+});
+
+test('shares turn a yield into an income, and the schedule into money', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const saved = await me('/api/dividends/spy', { method: 'PUT', body: { shares: 200, costBasis: 310 } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.symbol, 'SPY', 'lower case in the path, stored upper');
+
+  const { rows, totals } = (await me('/api/dividends')).body;
+  const spy = rows.find((r) => r.symbol === 'SPY');
+
+  assert.equal(spy.shares, 200);
+  assert.equal(spy.tracked, true);
+  assert.ok(Math.abs(spy.annualIncome - spy.annualRate * 200) < 0.01);
+  assert.ok(spy.yieldOnCost > spy.yield, 'bought below today’s price, so yield on cost is higher');
+
+  assert.equal(spy.projected.payments.length, 4, 'four quarters in the window');
+  assert.ok(spy.projected.total > 0);
+  assert.equal(totals.paying, 1);
+  assert.ok(totals.annualIncome > 0);
+  assert.ok(totals.yieldOnCost > totals.portfolioYield);
+});
+
+test('the projection window changes the schedule, not the rate', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/dividends/SPY', { method: 'PUT', body: { shares: 100 } });
+
+  const oneYear = (await me('/api/dividends?months=12')).body.rows.find((r) => r.symbol === 'SPY');
+  const threeYears = (await me('/api/dividends?months=36')).body.rows.find((r) => r.symbol === 'SPY');
+
+  assert.equal(oneYear.projected.payments.length, 4);
+  assert.equal(threeYears.projected.payments.length, 12);
+  assert.equal(oneYear.annualRate, threeYears.annualRate, 'the rate is a fact, not a function of the window');
+  assert.ok(Math.abs(threeYears.projected.total - oneYear.projected.total * 3) < 1);
+
+  // A window nobody offers falls back rather than projecting a century.
+  assert.equal((await me('/api/dividends?months=600')).body.months, 12);
+});
+
+test('a symbol the provider has no dividend data for can be filled in by hand', async (t) => {
+  // The mock answers for everything it knows, so this is the shape of the fallback rather than
+  // the provider refusing: a symbol with no history still takes a typed rate.
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/dividends/GLD', {
+    method: 'PUT',
+    body: { shares: 50, annualRate: 2.4, frequency: 'monthly', nextExDate: '2026-11-03' },
+  });
+
+  const gld = (await me('/api/dividends')).body.rows.find((r) => r.symbol === 'GLD');
+
+  assert.equal(gld.source, 'typed', 'and the row says so, rather than passing it off as the provider’s');
+  assert.equal(gld.annualRate, 2.4);
+  assert.equal(gld.perPayment, 0.2);
+  assert.equal(gld.projected.payments.length, 12, 'monthly');
+  assert.equal(gld.projected.total, 120);
+});
+
+test('an impossible date is refused rather than stored and exploded on later', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  // Date.parse accepts the 31st of February and rolls it to March. A DATE column does not.
+  const { status, body } = await me('/api/dividends/SPY', {
+    method: 'PUT',
+    body: { shares: 10, annualRate: 1, nextExDate: '2026-02-31' },
+  });
+
+  assert.equal(status, 200);
+  assert.equal(body.nextExDate, null, 'dropped, not rolled forward into a date nobody typed');
+});
+
+test('a blank form does not store a holding of zero shares paying zero', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/dividends/XLF', { method: 'PUT', body: { shares: '', costBasis: '', annualRate: '' } });
+
+  const xlf = (await me('/api/dividends')).body.rows.find((r) => r.symbol === 'XLF');
+  assert.equal(xlf.shares, null, 'not 0');
+  assert.equal(xlf.costBasis, null);
+  assert.equal(xlf.annualIncome, null, 'and so no income is claimed');
+  assert.equal(xlf.yieldOnCost, null);
+});
+
+test('holdings are per account, and one account cannot read or change another’s', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/dividends/SPY', { method: 'PUT', body: { shares: 500 } });
+
+  const member = s.client();
+  await member('/api/users', { method: 'POST', body: MEMBER }).catch(() => {});
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+  await member.signIn(MEMBER);
+
+  const theirs = (await member('/api/dividends')).body;
+  assert.ok(theirs.rows.every((r) => r.shares === null), 'they see the names, not the admin’s position in them');
+  assert.equal(theirs.totals.annualIncome, 0);
+
+  // And deleting by symbol only reaches their own row.
+  assert.equal((await member('/api/dividends/SPY', { method: 'DELETE' })).status, 404);
+  assert.equal((await admin('/api/dividends')).body.rows.find((r) => r.symbol === 'SPY').shares, 500);
+});
+
+test('a holding is removed on request, and the symbol stays on the screen', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/dividends/SPY', { method: 'PUT', body: { shares: 100 } });
+  assert.equal((await me('/api/dividends/SPY', { method: 'DELETE' })).status, 200);
+
+  const spy = (await me('/api/dividends')).body.rows.find((r) => r.symbol === 'SPY');
+  assert.ok(spy, 'still on the watchlist, so still on the page');
+  assert.equal(spy.tracked, false);
+  assert.equal(spy.shares, null);
+});
+
+test('the dividend screen needs a session like everything else', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const anon = s.client();
+
+  assert.equal((await anon('/api/dividends')).status, 401);
+  assert.equal((await anon('/api/dividends/SPY', { method: 'PUT', body: { shares: 1 } })).status, 401);
+  assert.equal((await anon('/api/dividends/SPY', { method: 'DELETE' })).status, 401);
+});
+
+test('a short call in front of an ex-date is flagged on the tracker', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const asOf = (await me('/api/dividends')).body.asOf;
+  const spy = (await me('/api/dividends')).body.rows.find((r) => r.symbol === 'SPY');
+
+  // An expiry well past the next ex-date, so the dividend falls inside the life of the contract.
+  const covered = {
+    symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540,
+    expiration: addDays(spy.nextExDate, 21), tradeDate: asOf, premium: 220,
+  };
+  assert.equal((await me('/api/positions', { method: 'POST', body: covered })).status, 200);
+
+  const row = (await me('/api/positions')).body.positions.find((p) => p.symbol === 'SPY');
+  assert.ok(row.exDividend, 'the covered call carries the warning');
+  assert.equal(row.exDividend.exDate, spy.nextExDate);
+  assert.match(row.exDividend.text, /ex-dividend/);
+});
+
+test('a put is never flagged for a dividend, and neither is an expiry before the ex-date', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const { asOf, rows } = (await me('/api/dividends')).body;
+  const spy = rows.find((r) => r.symbol === 'SPY');
+
+  // A put spread cannot be called away to collect a dividend, whatever the dates say.
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'VPCS', contracts: 1, shortStrike: 535, longStrike: 530,
+            expiration: addDays(spy.nextExDate, 21), tradeDate: asOf, premium: 138 },
+  });
+
+  // A call that expires before the ex-date has nothing to lose to it.
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 560,
+            expiration: addDays(spy.nextExDate, -7), tradeDate: asOf, premium: 90 },
+  });
+
+  const positions = (await me('/api/positions')).body.positions;
+  assert.equal(positions.length, 2);
+  assert.ok(positions.every((p) => p.exDividend === null), JSON.stringify(positions.map((p) => p.exDividend)));
+});
+
+const addDays = (iso, days) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
 // --- the position tracker -----------------------------------------------------------------------
 
 const POSITION = {
