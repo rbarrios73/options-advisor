@@ -91,7 +91,7 @@ export function createFileStore(file) {
     try {
       cache = upgradeFile(JSON.parse(await readFile(file, 'utf8')));
     } catch {
-      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {}, positions: [], holdings: [] };
+      cache = { lists: [newList(DEFAULT_LIST_NAME, DEFAULT_WATCHLIST)], activeId: null, settings: {}, positions: [], holdings: [], briefs: {} };
     }
     return cache;
   }
@@ -256,6 +256,26 @@ export function createFileStore(file) {
       if (!(state.holdings ?? []).some((h) => h.symbol === key)) throw new StoreError('No such holding.', 404);
       await save({ ...state, holdings: state.holdings.filter((h) => h.symbol !== key) });
     },
+
+    // --- the morning brief --------------------------------------------------------------------
+
+    async readBrief(_userId, tradingDay) {
+      return (await load()).briefs?.[tradingDay] ?? null;
+    },
+
+    async saveBrief(_userId, tradingDay, brief) {
+      const state = await load();
+      const previous = state.briefs?.[tradingDay];
+      const stored = { ...brief, tradingDay, runs: (previous?.runs ?? 0) + 1, generatedAt: new Date().toISOString() };
+
+      // Only the last few days are kept. A brief is read on the morning it is written and then
+      // never again, and this file is rewritten whole on every save.
+      const briefs = { ...state.briefs, [tradingDay]: stored };
+      const keep = Object.keys(briefs).sort().slice(-5);
+
+      await save({ ...state, briefs: Object.fromEntries(keep.map((day) => [day, briefs[day]])) });
+      return stored;
+    },
   };
 }
 
@@ -276,6 +296,7 @@ function upgradeFile(stored) {
       settings: stored.settings ?? {},
       positions: (stored.positions ?? []).map((p) => ({ id: p.id ?? randomUUID(), ...cleanPosition(p) })).filter((p) => p.symbol),
       holdings: (stored.holdings ?? []).map(cleanHolding).filter(Boolean),
+      briefs: stored.briefs ?? {},
     };
   }
 
@@ -286,6 +307,7 @@ function upgradeFile(stored) {
     settings: { ...rest, filters, weights },
     positions: [],
     holdings: [],
+    briefs: {},
   };
 }
 
@@ -612,6 +634,44 @@ export function createDbStore(db) {
         [userId, String(symbol ?? '').toUpperCase()],
       );
       if (!rowCount) throw new StoreError('No such holding.', 404);
+    },
+
+    // --- the morning brief --------------------------------------------------------------------
+
+    async readBrief(userId, tradingDay) {
+      const { rows } = await db.query(
+        `SELECT to_char(trading_day, 'YYYY-MM-DD') AS "tradingDay", findings, summary, model,
+                ungrounded, runs, generated_at AS "generatedAt"
+         FROM briefs WHERE user_id = $1 AND trading_day = $2`,
+        [userId, tradingDay],
+      );
+      return rows[0] ?? null;
+    },
+
+    /**
+     * Writes today's brief, or replaces it on a re-run. `runs` counts the regenerations, which is
+     * what the route caps — the unique index already makes the first one free of races, and this
+     * makes a refresh button something other than an open tap on the model bill.
+     */
+    async saveBrief(userId, tradingDay, brief) {
+      const { rows } = await db.query(
+        `INSERT INTO briefs (user_id, trading_day, findings, summary, model, ungrounded)
+         VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb)
+         ON CONFLICT (user_id, trading_day) DO UPDATE SET
+           findings = EXCLUDED.findings, summary = EXCLUDED.summary, model = EXCLUDED.model,
+           ungrounded = EXCLUDED.ungrounded, runs = briefs.runs + 1, generated_at = now()
+         RETURNING to_char(trading_day, 'YYYY-MM-DD') AS "tradingDay", findings, summary, model,
+                   ungrounded, runs, generated_at AS "generatedAt"`,
+        [
+          userId,
+          tradingDay,
+          JSON.stringify(brief.findings ?? []),
+          brief.summary ?? null,
+          brief.model ?? null,
+          JSON.stringify(brief.ungrounded ?? []),
+        ],
+      );
+      return rows[0];
     },
   };
 }

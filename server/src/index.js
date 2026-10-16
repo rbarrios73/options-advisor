@@ -5,9 +5,10 @@
 import { config } from './config.js';
 import { createApp, prepare } from './app.js';
 import { createDb } from './db.js';
+import { startBriefTimer } from './brief.js';
 
 const db = createDb(config);
-const { app, accounts, users, provider, hasBuiltUi } = createApp({ config, db });
+const { app, accounts, users, provider, briefer, hasBuiltUi } = createApp({ config, db });
 
 const guarded = !accounts && Boolean(config.authPassword);
 
@@ -22,6 +23,16 @@ prepare({ config, db, users, accounts })
       }
       if (hasBuiltUi) {
         console.log('Serving the built UI from this process — open the same address in a browser.');
+      }
+
+      // The pre-market brief writes itself once the clock passes nine in New York. On a host that
+      // sleeps — Render's free tier does — this timer will often miss it, which is why the route
+      // also generates on demand. See brief.js.
+      if (config.briefEnabled) {
+        startBriefTimer(briefer, {
+          usersOf: async () => (accounts ? (await users.list()).filter((u) => !u.disabled).map((u) => u.id) : ['local']),
+        });
+        console.log('Morning brief is on: written for each account after 09:00 America/New_York.');
       }
 
       if (accounts) {

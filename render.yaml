@@ -77,6 +77,20 @@ services:
       - key: MAX_ACCOUNTS
         sync: false
 
+      # --- the morning brief ---
+      #
+      # On by default. The findings cost nothing but quotes; the four-sentence summary costs one
+      # model call per account per trading day, and only when ANTHROPIC_API_KEY is set below —
+      # without it the brief is the findings, which is most of the value.
+      #
+      # Set this to "off" to stop the timer. The page still builds one when you open it.
+      #
+      # Worth knowing on the free plan: this instance sleeps after fifteen minutes without
+      # traffic, so the 09:00 timer will usually miss. That is why opening the page builds the
+      # brief if it is not there yet.
+      - key: BRIEF
+        sync: false
+
       # --- the advisor on the Screener (optional) ---
       #
       # Blank means off, and the page says so. Paste an Anthropic key in the dashboard to turn it

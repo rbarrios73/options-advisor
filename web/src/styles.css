@@ -882,6 +882,10 @@ tr.pos-closed td, tr.pos-rolled td, tr.pos-assigned td { opacity: 0.62; }
 .tone-muted { border-color: var(--muted); color: var(--muted); }
 .tone-warn  { border-color: var(--warn); color: var(--warn); }
 .tone-watch { border-color: var(--series-2); color: var(--series-2); }
+/* The serious one. --warn and --series-2 sit close enough together that a reader scanning the
+   brief could not tell "in the money" from "expiring soon" at a glance; this one is plainly
+   different, and the word still carries the meaning on its own. */
+.tone-serious { border-color: var(--bad); color: var(--bad); }
 
 tr.settle-row td { background: var(--sunken); white-space: normal; }
 .settle-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 4px 0; }
@@ -987,4 +991,52 @@ table.dividend-table tr.quiet strong { color: var(--text-secondary); }
      into the cell's title. */
   .risk-why { display: none; }
   table.dividend-table td { padding-top: 6px; padding-bottom: 6px; }
+}
+
+/* --- the morning brief --------------------------------------------------------------------- */
+
+.brief { border-left: 3px solid var(--accent); }
+.brief-quiet { border-left-color: var(--line); }
+.brief-empty { border-left-color: var(--line); margin-bottom: 16px; }
+
+.brief-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.brief-head h3 { margin: 0; font-size: 14px; }
+.brief-actions { display: flex; align-items: baseline; gap: 12px; }
+
+/* The sentences are the thing you read at nine, so they are set larger than the list under
+   them — the one place in this app where prose outranks a table. */
+.brief-summary {
+  margin: 8px 0 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 80ch;
+}
+
+.brief-findings { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+
+.finding {
+  border-left: 3px solid var(--line);
+  padding: 2px 0 2px 9px;
+}
+.finding.sev-high { border-left-color: var(--bad); }
+.finding.sev-watch { border-left-color: var(--warn); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.finding-head .ticker-link { font-weight: 600; }
+.finding-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.finding-why { list-style: none; margin: 2px 0 0; padding: 0; }
+.finding-why li { line-height: 1.4; }
+
+.brief-footnote { margin: 12px 0 0; max-width: 80ch; line-height: 1.4; }
+
+@media (max-width: 720px) {
+  .brief-head { flex-direction: column; align-items: flex-start; }
+  .brief-actions { flex-wrap: wrap; }
 }

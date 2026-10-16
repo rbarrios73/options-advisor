@@ -302,6 +302,85 @@ A wrong model id comes back as the API's own message, so one env var fixes it.
 
 It is not advice, and the page says so under every answer.
 
+## The morning brief
+
+At the top of the home screen, once a trading day: what is worth knowing about your own book
+before the open.
+
+### What finds things, and what writes them
+
+**The app finds them. The model only writes them up.** That division is the whole design, and it
+is worth stating plainly because the opposite — handing a model your positions and asking what
+matters — is the obvious thing to build and the wrong one. A model asked that question is fluent
+about whatever it happens to notice, and exactly as fluent on the morning it notices nothing.
+Detection in code fails loudly; detection in prose fails silently.
+
+So the rules live in `domain/brief.js`, in code, with tests:
+
+- **A breached strike** — the price is through the short strike.
+- **An expiry inside seven days**, counting today.
+- **Earnings before expiry** — from the date on the watchlist entry, when it falls inside the life
+  of the contract. Not one that already happened, and not one that lands after it expires.
+- **An ex-dividend date in front of a short call**, which is how a position gets taken off you a
+  month early. Reported as "likely" when the dividend beats the time value left; see the Dividends
+  tab for why.
+- **A watchlist name that moved more than it usually does.**
+
+Findings are grouped by **position, not by rule**: a spread that is both in the money and expiring
+on Friday is one problem and gets one line with three labels, not three lines. Worst first.
+
+The model is then given that list and nothing else — no chain, no candidates, no premiums — and
+told: at most four sentences, only these findings, no number or ticker that is not in them, no
+knowledge of the market, and nothing about what to do. The summary is checked back for tickers
+that were not in the findings, and a stray one is flagged on screen rather than hidden.
+
+**With no `ANTHROPIC_API_KEY` the brief still works.** The findings are stored, the panel renders
+them, and a line says there is no written summary. The same is true when the model errors or is
+rate-limited: the prose is lost, the brief is not. That is the dividend of putting detection in
+code, and it is the reason to do it.
+
+### "Moved more than it usually does"
+
+Measured against the symbol's **own** recent range, not a flat percentage. The median absolute
+close-to-close move over 90 days is what a normal day looks like for that symbol; a move 2.5× that
+is a finding, with a 1.5% floor so a becalmed name does not report every twitch.
+
+Median rather than mean, deliberately: one earnings gap would drag a mean far enough that the next
+gap looked ordinary, which is precisely backwards. And too little history returns *nothing to say*
+rather than zero — "I cannot tell" and "it was quiet" are different answers, and a zero would make
+every move look infinite.
+
+### Nine o'clock, and what that means on a sleeping host
+
+**09:00 `America/New_York`**, from `Intl` — so it follows daylight saving without a library and
+without a twice-yearly correction. The zone is the market's, not the server's and not yours: a
+brief that arrives at 9am Oregon time arrives three hours after the bell.
+
+A brief is a snapshot of its own nine o'clock, so the app will only ever **build** the current
+day's. Before nine, or at a weekend, you see the one that was actually written — or nothing, with
+a line saying when the next is due. It will not retroactively build "Tuesday's brief" out of
+Wednesday's prices.
+
+Two things make it appear, because neither is enough alone:
+
+- **A timer**, every fifteen minutes while the process is up, writing for each account that has an
+  open position or a watchlist.
+- **On demand**, the first time the page is opened and today's is missing.
+
+The second exists because **Render's free instances sleep after fifteen minutes of no traffic**,
+and a sleeping process runs no timers — on the free tier the timer alone would miss most mornings.
+With both, the worst case is that the brief is computed when you open the page rather than before
+you did, which you cannot tell apart from the outside.
+
+### The cost
+
+One model call per account per trading day, capped at 300 tokens — four sentences do not need
+more. A stored brief is served from the database, so opening the home screen five times is still
+one call. **Run again** rebuilds it, five times a day at most; a refresh button on something that
+costs money per press is otherwise an open tap.
+
+`BRIEF=off` stops the timer. The route still builds one when you open the page.
+
 ## The Watchlist tab
 
 Your lists, edited properly rather than through a panel in the sidebar. An account can keep up to
@@ -687,6 +766,20 @@ premium moves a goal and only on the day it was settled, that an assignment loss
 net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
+
+For the morning brief: that the clock is the market's — 13:30 UTC is 09:30 in New York in summer
+and 08:30 in winter, and a brief on the server's clock would be wrong half the year without anyone
+noticing until November; that a weekend shows Friday's brief rather than nothing, and that neither
+the route nor the timer will build one for a day that has passed, which would stamp yesterday's
+date on this morning's prices; that a typical day is a median so one earnings gap cannot redefine
+normal, and that too little history says nothing rather than zero; that the same 2% day is a
+finding for a quiet symbol and not for a lively one; that one position with four problems is one
+line with four labels; that a closed position is not in it; that a symbol already covered by a
+position is not repeated as a mover; that the prompt still forbids extra numbers, extra tickers,
+market knowledge and advice — pinned sentence by sentence, because those are the load-bearing
+ones; that a model which fails costs the prose and not the findings; that a ticker nobody fed it
+is flagged rather than hidden; that opening the page twice is not two model calls; and that
+"Run again" stops at five a day.
 
 For dividends: that a blank box is not a figure of zero (an unset rate is not a rate of nothing);
 that "2026-02-31" is dropped rather than rolled forward to 3 March, which `Date.parse` does

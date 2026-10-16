@@ -9,6 +9,7 @@
 // those rows. Everything numeric on the screen is still computed by the screener.
 
 import { MAX_QUESTION, SYSTEM_PROMPT, buildDigest, ungroundedSymbols } from './domain/advice.js';
+import { BRIEF_SYSTEM, briefDigest, ungroundedInBrief } from './domain/brief.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -31,8 +32,76 @@ export class AdvisorError extends Error {
 export function createAdvisor({ apiKey, model, maxTokens = 900, fetchImpl = fetch, timeoutMs = 45_000 }) {
   if (!apiKey) return null;
 
+  /** One POST, shared by everything below, so there is one place that knows the wire format. */
+  async function call({ system, user, tokens }) {
+    const response = await withTimeout(
+      fetchImpl(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': API_VERSION,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: tokens ?? maxTokens,
+          system,
+          messages: [{ role: 'user', content: user }],
+        }),
+      }),
+      timeoutMs,
+    );
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      // The API's own message, verbatim: a wrong model id or an exhausted credit balance says
+      // exactly what is wrong, and paraphrasing it into "the advisor failed" hides the fix.
+      const detail = payload?.error?.message ?? `${response.status} ${response.statusText}`;
+      throw new AdvisorError(`Anthropic API: ${detail}`, response.status === 401 ? 500 : 502);
+    }
+
+    const text = (payload.content ?? [])
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('')
+      .trim();
+
+    if (!text) throw new AdvisorError('The model returned nothing.', 502);
+
+    return {
+      text,
+      model: payload.model ?? model,
+      truncated: payload.stop_reason === 'max_tokens',
+      usage: { input: payload.usage?.input_tokens ?? null, output: payload.usage?.output_tokens ?? null },
+    };
+  }
+
   return {
     model,
+
+    /**
+     * Turns a morning's findings into four sentences.
+     *
+     * The findings arrive already computed and already decided — this call adds no judgement,
+     * and the prompt in domain/brief.js spends most of its length saying so. 300 tokens because
+     * four sentences is 300 tokens; a larger ceiling would only buy a longer brief.
+     */
+    async summarise({ findings, asOf }) {
+      const { text, model: used, truncated, usage } = await call({
+        system: BRIEF_SYSTEM,
+        user: briefDigest(findings, { asOf }),
+        tokens: 300,
+      });
+
+      return {
+        summary: text,
+        model: used,
+        ungrounded: ungroundedInBrief(text, findings),
+        truncated,
+        usage,
+      };
+    },
 
     /**
      * Answers one question about one scan.
@@ -50,61 +119,21 @@ export function createAdvisor({ apiKey, model, maxTokens = 900, fetchImpl = fetc
         throw new AdvisorError('There are no candidates to talk about — run a scan first.', 409);
       }
 
-      const body = {
-        model,
-        max_tokens: maxTokens,
+      const { text, model: used, truncated, usage } = await call({
         system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            // The table first, the question last: the question is the only part that varies, and
-            // it reads as a question about what came before rather than as a new topic.
-            content: `Here is my screener's output.\n\n<scan>\n${digest}\n</scan>\n\nMy question: ${clean}`,
-          },
-        ],
-      };
-
-      const response = await withTimeout(
-        fetchImpl(API_URL, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': API_VERSION,
-          },
-          body: JSON.stringify(body),
-        }),
-        timeoutMs,
-      );
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        // The API's own message, verbatim: a wrong model id or an exhausted credit balance says
-        // exactly what is wrong, and paraphrasing it into "the advisor failed" hides the fix.
-        const detail = payload?.error?.message ?? `${response.status} ${response.statusText}`;
-        throw new AdvisorError(`Anthropic API: ${detail}`, response.status === 401 ? 500 : 502);
-      }
-
-      const answer = (payload.content ?? [])
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('')
-        .trim();
-
-      if (!answer) throw new AdvisorError('The model returned nothing.', 502);
+        // The table first, the question last: the question is the only part that varies, and it
+        // reads as a question about what came before rather than as a new topic.
+        user: `Here is my screener's output.\n\n<scan>\n${digest}\n</scan>\n\nMy question: ${clean}`,
+      });
 
       return {
-        answer,
-        model: payload.model ?? model,
+        answer: text,
+        model: used,
         // Flagged, not hidden. The page shows the answer with a warning beside it; suppressing it
         // would leave the person with nothing and no idea why.
-        ungrounded: ungroundedSymbols(answer, result),
-        truncated: payload.stop_reason === 'max_tokens',
-        usage: {
-          input: payload.usage?.input_tokens ?? null,
-          output: payload.usage?.output_tokens ?? null,
-        },
+        ungrounded: ungroundedSymbols(text, result),
+        truncated,
+        usage,
       };
     },
   };

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import BriefPanel from '../components/BriefPanel.jsx';
 import Watchlist from '../components/Watchlist.jsx';
 import Filters from '../components/Filters.jsx';
 import ResultsTable from '../components/ResultsTable.jsx';
@@ -15,6 +16,10 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
 
   return (
     <>
+      {/* Above everything, including the scan controls: it is about positions you already hold,
+          which outranks anything you might open today. */}
+      <BriefPanel />
+
       <div className="page-head">
         <p className="muted small">
           Ranks the structures your filters allow, using one snapshot of the chain. It is a screener,

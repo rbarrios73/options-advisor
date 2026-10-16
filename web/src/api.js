@@ -29,6 +29,10 @@ export const api = {
 
   settings: () => fetch('/api/settings').then(json),
 
+  // The morning brief. The GET builds today's if nobody has yet; the POST rebuilds it, capped.
+  brief: () => fetch('/api/brief').then(json),
+  refreshBrief: () => send('/api/brief', 'POST'),
+
   /** One question about the scan the server re-runs from its own cache. */
   explain: (question) => send('/api/explain', 'POST', { question }),
 

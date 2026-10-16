@@ -66,6 +66,11 @@ export const config = {
   // which is deliberate — the cap is a brake on strangers, not on you.
   maxAccounts: Number(process.env.MAX_ACCOUNTS ?? 25),
 
+  // The pre-market brief. On by default and cheap: one model call per account per trading day,
+  // and the findings themselves cost nothing but the quotes a scan would have fetched anyway.
+  // Set BRIEF=off to stop the timer — the page then only builds one when you open it.
+  briefEnabled: process.env.BRIEF !== 'off',
+
   riskFreeRate: Number(process.env.RISK_FREE_RATE ?? 0.04),
 
   // The optional language-model reader on the Screener. Unset means the feature is off and the

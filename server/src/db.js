@@ -195,6 +195,27 @@ export async function migrate(db) {
   // has the table — the same reason the watchlist is keyed this way.
   await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS dividend_holdings_key ON dividend_holdings (user_id, symbol)`);
 
+  // One pre-market brief per account per trading day. Stored rather than recomputed on each view
+  // because it is a snapshot of 9am: by eleven the prices have moved and a regenerated brief would
+  // quietly disagree with the one that was read at breakfast. It is also what makes the cost
+  // bounded — the unique index below is what stops a page refresh being a model call.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS briefs (
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      -- The New York trading day, not the server's date. See domain/brief.js.
+      trading_day  DATE NOT NULL,
+      findings     JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Null when there is no ANTHROPIC_API_KEY, which is a supported state: the findings are the
+      -- brief, and the prose is a convenience on top of them.
+      summary      TEXT,
+      model        TEXT,
+      ungrounded   JSONB NOT NULL DEFAULT '[]'::jsonb,
+      runs         INTEGER NOT NULL DEFAULT 1,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS briefs_key ON briefs (user_id, trading_day)`);
+
   await moveWatchlistsOutOfSettings(db);
 }
 

@@ -48,6 +48,7 @@ import {
   yieldOf,
 } from './domain/dividends.js';
 import { createAdvisor } from './advisor.js';
+import { createBriefer } from './brief.js';
 
 /**
  * Builds the Express app.
@@ -583,6 +584,44 @@ export function createApp({ config, db = null }) {
     }),
   );
 
+  // --- the morning brief ----------------------------------------------------------------------
+  //
+  // What is worth knowing about your own book before the open, written once per trading day. The
+  // rules live in domain/brief.js and the model only turns their output into four sentences —
+  // see the comment at the top of that file for why that order matters.
+  //
+  // `enrich` is handed over rather than reimplemented, so the brief and the Positions page cannot
+  // disagree about whether a strike is breached.
+
+  const briefer = createBriefer({
+    store,
+    scanner,
+    enrich,
+    advisor,
+    now: config.now ?? (() => new Date()),
+  });
+
+  app.get(
+    '/api/brief',
+    gate,
+    wrap(async (req, res) => {
+      const brief = await briefer.forUser(currentUserId(req));
+
+      // Null is a real answer, not an error: before nine on a Monday there is no brief yet, and
+      // the page says when the next one is due rather than showing a failure.
+      res.json({ day: briefer.dueDay(), brief, advisor: Boolean(advisor) });
+    }),
+  );
+
+  app.post(
+    '/api/brief',
+    gate,
+    wrap(async (req, res) => {
+      const brief = await briefer.forUser(currentUserId(req), { force: true });
+      res.json({ day: briefer.dueDay(), brief, advisor: Boolean(advisor) });
+    }),
+  );
+
   app.put(
     '/api/theme',
     gate,
@@ -900,7 +939,7 @@ app.get(
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'No such endpoint.' }));
 
-  return { app, accounts, db, users, store, provider, scanner, hasBuiltUi };
+  return { app, accounts, db, users, store, provider, scanner, briefer, hasBuiltUi };
 }
 
 /** Flags any candidate whose expiry sits beyond a hand-entered earnings date. */

@@ -53,7 +53,10 @@ async function startServer(overrides = {}) {
   const db = await PGlite.create();
   await migrate(db);
 
-  const config = { ...baseConfig, ...overrides };
+  // The clock is a box rather than a value, so a test can stand at Friday 09:30 and then step
+  // to Saturday without rebuilding the server around it.
+  const clock = { at: overrides.now ?? (() => new Date()) };
+  const config = { ...baseConfig, ...overrides, now: () => clock.at() };
   const built = createApp({ config, db });
   await prepare({ config, db, users: built.users, accounts: built.accounts });
 
@@ -99,7 +102,7 @@ async function startServer(overrides = {}) {
     await db.close();
   };
 
-  return { client, base, db, users: built.users, close };
+  return { client, base, db, users: built.users, briefer: built.briefer, setNow: (fn) => { clock.at = fn; }, close };
 }
 
 // --- the gate --------------------------------------------------------------------------------
@@ -720,6 +723,249 @@ test('the admin can still see and manage an account that signed itself up', asyn
 
   // Including shutting one out again: open sign-up means the Users page is the bouncer.
   assert.equal((await admin(`/api/users/${joined.id}`, { method: 'PATCH', body: { disabled: true } })).status, 200);
+});
+
+// --- the morning brief ----------------------------------------------------------------------------
+
+// A Wednesday, 13:30 UTC — half past nine in New York, so a brief is due for that day.
+const MORNING = () => new Date('2026-10-14T13:30:00Z');
+const BEFORE_NINE = () => new Date('2026-10-14T12:30:00Z');
+
+test('before nine there is no brief, and that is an answer rather than an error', async (t) => {
+  const s = await startServer({ now: BEFORE_NINE });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const { status, body } = await me('/api/brief');
+  assert.equal(status, 200);
+  assert.equal(body.day, '2026-10-13', 'the current brief is still the previous trading day’s');
+
+  // Null rather than a Tuesday brief built from Wednesday's prices. A brief is a snapshot of its
+  // own nine o'clock; generating one for a day that has passed would stamp the wrong date on
+  // this morning's numbers and look like a record of a morning nobody examined.
+  assert.equal(body.brief, null);
+});
+
+test('a weekend shows the brief Friday actually wrote, and builds nothing new', async (t) => {
+  const s = await startServer({ now: () => new Date('2026-10-16T13:30:00Z') }); // Friday, 09:30 ET
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-23', tradeDate: '2026-10-01', premium: 220 },
+  });
+  const friday = (await me('/api/brief')).body.brief;
+  assert.ok(friday.findings.length > 0);
+
+  // Saturday: the same brief, untouched, not a new one carrying Saturday's prices.
+  s.setNow(() => new Date('2026-10-17T15:00:00Z'));
+  const saturday = (await me('/api/brief')).body;
+
+  assert.equal(saturday.day, '2026-10-16');
+  assert.equal(saturday.brief.generatedAt, friday.generatedAt, 'not rebuilt');
+  assert.deepEqual((await s.briefer.run({ userIds: ['any'] })), { day: null, written: 0 }, 'and the timer stays quiet');
+});
+
+test('the brief is built from the tracker, in market time, and stored for the day', async (t) => {
+  const fetchImpl = stubAnthropic('SPY is through its short put with three days left.');
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  // SPY trades at 552.40 under the mock provider, so a 560 short call is in the money.
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+
+  const { status, body } = await me('/api/brief');
+  assert.equal(status, 200);
+  assert.equal(body.day, '2026-10-14');
+  assert.equal(body.advisor, true);
+
+  const codes = body.brief.findings.flatMap((f) => f.reasons.map((r) => r.code));
+  assert.ok(codes.includes('breached'), `expected a breach, got ${JSON.stringify(codes)}`);
+  assert.ok(codes.includes('expiring'), 'and two days to expiry');
+  assert.equal(body.brief.findings[0].severity, 'high');
+  assert.equal(body.brief.summary, 'SPY is through its short put with three days left.');
+
+  // One model call, and the second request is served from storage rather than paying again.
+  assert.equal(fetchImpl.calls.length, 1);
+  const again = await me('/api/brief');
+  assert.equal(fetchImpl.calls.length, 1, 'opening the page twice is not two model calls');
+  assert.equal(again.body.brief.generatedAt, body.brief.generatedAt);
+});
+
+test('the model is shown the findings and nothing else', async (t) => {
+  const fetchImpl = stubAnthropic('One position is in the money.');
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-11-20', tradeDate: '2026-10-01', premium: 220 },
+  });
+  await me('/api/brief');
+
+  const [sent] = fetchImpl.calls;
+  assert.match(sent.body.system, /AT MOST four sentences/);
+  assert.match(sent.body.system, /Do not tell the person what to do/);
+  assert.equal(sent.body.max_tokens, 300, 'four sentences does not need a larger ceiling');
+
+  // The prompt is the digest — no chain, no candidate list, no account details.
+  const prompt = sent.body.messages[0].content;
+  assert.match(prompt, /Date: 2026-10-14/);
+  assert.match(prompt, /SPY 540 covered call/);
+  assert.ok(!/premium/i.test(prompt), 'what you paid is not the model’s business');
+});
+
+test('a quiet morning still produces a brief, and says so', async (t) => {
+  const fetchImpl = stubAnthropic('Nothing was flagged this morning.');
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', anthropicModel: 'stub-model', fetchImpl });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  const { body } = await me('/api/brief');
+  assert.deepEqual(body.brief.findings, []);
+  assert.match(fetchImpl.calls[0].body.messages[0].content, /Findings: none/);
+  assert.equal(body.brief.summary, 'Nothing was flagged this morning.');
+});
+
+test('with no API key the findings are the brief', async (t) => {
+  // The point of detecting in code: no key, no network, no model — and the brief still has
+  // everything that matters in it.
+  const s = await startServer({ now: MORNING });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+
+  const { body } = await me('/api/brief');
+  assert.equal(body.advisor, false);
+  assert.equal(body.brief.summary, null, 'no prose');
+  assert.ok(body.brief.findings.length > 0, 'but the findings are there');
+});
+
+test('a model that fails costs the prose, not the brief', async (t) => {
+  const failing = async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'rate limited' } }) });
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', fetchImpl: failing });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+
+  const { status, body } = await me('/api/brief');
+  assert.equal(status, 200, 'not a 502 — the brief is still worth serving');
+  assert.equal(body.brief.summary, null);
+  assert.ok(body.brief.findings.length > 0);
+});
+
+test('a summary naming a ticker nobody fed it is flagged, not hidden', async (t) => {
+  const fetchImpl = stubAnthropic('SPY is in the money, and NVDA looks weak too.');
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', fetchImpl });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+
+  const { body } = await me('/api/brief');
+  assert.deepEqual(body.brief.ungrounded, ['NVDA']);
+  assert.match(body.brief.summary, /NVDA/, 'and the answer is still shown, with the warning beside it');
+});
+
+test('running it again rebuilds it, up to a daily ceiling', async (t) => {
+  const fetchImpl = stubAnthropic('Still the same position.');
+  const s = await startServer({ now: MORNING, anthropicApiKey: 'sk-test', fetchImpl });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/brief');
+  assert.equal(fetchImpl.calls.length, 1);
+
+  const second = await me('/api/brief', { method: 'POST' });
+  assert.equal(second.status, 200);
+  assert.equal(second.body.brief.runs, 2);
+  assert.equal(fetchImpl.calls.length, 2, 'a refresh really does rebuild it');
+
+  // Five runs a day, then it stops — a refresh button on a page that costs money per press is
+  // otherwise an open tap.
+  for (let i = 0; i < 3; i++) await me('/api/brief', { method: 'POST' });
+  const refused = await me('/api/brief', { method: 'POST' });
+
+  assert.equal(refused.status, 429);
+  assert.match(refused.body.error, /5 refreshes today/);
+  assert.equal(fetchImpl.calls.length, 5, 'and the refused one did not reach the model');
+});
+
+test('one account’s brief is its own', async (t) => {
+  const s = await startServer({ now: MORNING });
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+  await admin('/api/users', { method: 'POST', body: MEMBER });
+
+  const member = s.client();
+  await member.signIn(MEMBER);
+
+  assert.ok((await admin('/api/brief')).body.brief.findings.length > 0);
+  assert.deepEqual((await member('/api/brief')).body.brief.findings, [], 'not the admin’s position');
+});
+
+test('the brief needs a session like everything else', async (t) => {
+  const s = await startServer({ now: MORNING });
+  t.after(s.close);
+  const anon = s.client();
+
+  assert.equal((await anon('/api/brief')).status, 401);
+  assert.equal((await anon('/api/brief', { method: 'POST' })).status, 401);
+});
+
+test('the timer writes briefs for accounts that have something to say about', async (t) => {
+  const s = await startServer({ now: MORNING });
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  await admin('/api/positions', {
+    method: 'POST',
+    body: { symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 540, expiration: '2026-10-16', tradeDate: '2026-10-01', premium: 220 },
+  });
+
+  const { users } = (await admin('/api/users')).body;
+  const first = await s.briefer.run({ userIds: users.map((u) => u.id) });
+
+  assert.equal(first.day, '2026-10-14');
+  assert.equal(first.written, 1);
+
+  // Idempotent: a tick that finds the brief already written does nothing. The timer runs every
+  // fifteen minutes, so this is the common case, not the rare one.
+  const second = await s.briefer.run({ userIds: users.map((u) => u.id) });
+  assert.equal(second.written, 0);
 });
 
 // --- the dividend screen --------------------------------------------------------------------------
