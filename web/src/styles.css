@@ -1040,3 +1040,14 @@ table.dividend-table tr.quiet strong { color: var(--text-secondary); }
   .brief-head { flex-direction: column; align-items: flex-start; }
   .brief-actions { flex-wrap: wrap; }
 }
+
+/* --- time decay ------------------------------------------------------------------------------ */
+
+.decay-chart { margin: 0; }
+.decay-chart svg { width: 100%; height: auto; display: block; }
+.decay-chart figcaption { margin-top: 4px; min-height: 16px; }
+
+/* The three readings under the curve share the greeks' layout, because they are the same kind of
+   thing — a number with a unit — and a second visual idiom for them would be noise. */
+.decay-facts { margin-top: 12px; }
+.decay-panel .chart-head { margin-bottom: 10px; }

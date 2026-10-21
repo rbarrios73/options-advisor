@@ -639,6 +639,41 @@ Things the model does not know, stated on the page as well:
 - **Day one is negative**, and that is correct: selling at the bid and buying at the ask puts you
   behind the model value by about the gap to mid the moment you open.
 
+### Time decay, as its own view
+
+The payoff chart is P&L across **price** on one chosen day. Underneath it, **What time alone
+does** is P&L across **days** at one chosen price — today's. The Date slider walks the first
+through the second one day at a time, which never shows the shape, and the shape is the point.
+
+Three readings sit under the curve: what time is worth between now and expiry, how much of that
+lands in the final week, and the day by which half of it is done. The dot on the curve is where
+the Date slider is standing, so the two controls describe the same point rather than sitting
+beside each other saying different things.
+
+**The usual rule of thumb is wrong here, and the app says so per position.** "Theta accelerates
+into expiry" is true at the money and false away from it — and a credit spread is deliberately
+placed away from it. Run the numbers on a 95/90 put spread with the stock at 100: the final week
+carries **14%** of the decay, less than the 23% a straight line would give it, because by then the
+options are nearly worthless and there is little left to take. Move the same spread to the money
+and the final week carries **69%**. The two shapes are opposite. So the sentence under the chart
+is picked from the measured numbers — compared against what a flat rate would put in the last
+week, so the comparison holds at any holding period — rather than asserted:
+
+| shape | what it means | typical case |
+|---|---|---|
+| **over early** | theta fades; most of the decay is done well before expiry | strikes far from the money |
+| **steady** | no part of the period does much more of the work | mildly out of the money |
+| **lands in the final stretch** | theta accelerates; the curve steepens at the end | at or near the money |
+
+Two things the curve holds still that the market will not: **the price does not move and implied
+vol does not change.** A credit spread drawn this way rises smoothly to its full credit, which is
+exactly the picture that makes short premium look like a bond. The page says so under the chart,
+in bold, because that single assumption is what separates "what waiting is worth" from "what this
+position will make".
+
+It is also honest about the unhappy case: a credit spread whose short strike is already through
+the price shows a **negative** total, because for that position time is working against you.
+
 The page's address describes what is on screen (`#/simulator?symbol=SPY&exp=…&delta=0.2&width=5`),
 so a setup can be bookmarked or sent to someone.
 
@@ -766,6 +801,20 @@ premium moves a goal and only on the day it was settled, that an assignment loss
 net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
+
+For time decay: that the curve ends on the real expiry payoff rather than a Black-Scholes value
+with a hair of time left; that a credit spread gains as time passes and a long option bleeds, and
+that with the price held still neither ever goes backwards; that the decay of an out-of-the-money
+spread is front-loaded while the same spread at the money is back-loaded — asserted in opposite
+directions in the same test, because the folk wisdom is only true of one of them; that theta on
+the curve is the theta at that day and fades or accelerates accordingly; that the shape classifier
+is judged against what a straight line would put in the final week, so a 90-day position is not
+called front-loaded for having a small one; that the shares are of the signed total, so they read
+the same way for a position that gains and one that bleeds; that quantity scales the figures and
+not the shape; that a position expiring today returns nulls rather than dividing by zero; that a
+long-dated position is thinned rather than drawn at 365 points; and that the decay curve at T+N
+equals the payoff chart's projected value at today's price on that same day — the two are drawn
+from the same function and a reader will compare them.
 
 For the morning brief: that the clock is the market's — 13:30 UTC is 09:30 in New York in summer
 and 08:30 in winter, and a brief on the server's clock would be wrong half the year without anyone

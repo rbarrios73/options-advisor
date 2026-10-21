@@ -546,6 +546,114 @@ export function pnlCurve(position, { daysForward = 0, ivShift = 0, points = 240,
 }
 
 /**
+ * What time alone does: the position's P&L at every day from now to expiry, with the price held
+ * where it is.
+ *
+ * THE PAYOFF CHART ANSWERS A DIFFERENT QUESTION. That one is P&L across price on one chosen day;
+ * this is P&L across days at one chosen price. The slider walks the first through the second one
+ * day at a time, which never shows the shape — and the shape is the point, because decay is not a
+ * straight line. A credit spread gives up most of its theta in the last fortnight, and "half of
+ * what is left arrives in the final week" is not something anyone reads off a slider.
+ *
+ * THE ASSUMPTION IS LOAD-BEARING and the page says so where the chart is: the price does not move
+ * and implied vol does not change. Neither is true. A credit spread drawn this way rises smoothly
+ * to its full credit, which is exactly the picture that makes short premium look like a bond.
+ */
+export function decayCurve(position, { price, ivShift = 0, step } = {}) {
+  const at = price ?? position.spot;
+  const { dte } = position;
+
+  if (!(dte > 0)) return [{ day: 0, date: position.asOf, daysLeft: 0, pnl: pnlAt(position, at, 0, ivShift), theta: 0 }];
+
+  // Daily out to four months, then thinned — a year-long LEAP does not need 365 points to show
+  // its shape, and the last day is always sampled exactly because that is where the kink is.
+  const every = step ?? Math.max(1, Math.ceil(dte / 120));
+
+  const days = new Set();
+  for (let d = 0; d <= dte; d += every) days.add(d);
+  days.add(dte);
+
+  return [...days]
+    .sort((a, b) => a - b)
+    .map((day) => ({
+      day,
+      date: addDays(position.asOf, day),
+      daysLeft: dte - day,
+      pnl: pnlAt(position, at, day, ivShift),
+      // Theta at that future point, not today's: it is the number that changes most as expiry
+      // approaches, and quoting today's across the whole curve would be the error this is for.
+      theta: positionGreeks(position, at, day, ivShift).theta,
+    }));
+}
+
+/**
+ * The two or three facts worth reading off that curve, as numbers rather than as a shape.
+ *
+ * `share` figures are of the TOTAL, signed — so they read the same way for a credit spread, which
+ * gains as time passes, and a long option, which bleeds. A position whose total decay is nil
+ * returns nulls rather than dividing by it.
+ */
+export function decayProfile(position, options = {}) {
+  const curve = decayCurve(position, options);
+  const at = options.price ?? position.spot;
+  const shift = options.ivShift ?? 0;
+
+  const now = curve[0].pnl;
+  const end = curve.at(-1).pnl;
+  const total = round(end - now, 2);
+
+  if (position.dte <= 0 || Math.abs(total) < 0.005) {
+    return { curve, now, end, total: 0, lastWeek: 0, lastWeekShare: null, halfwayDay: null, halfwayDate: null };
+  }
+
+  const weekOut = Math.max(position.dte - 7, 0);
+  const lastWeek = round(end - pnlAt(position, at, weekOut, shift), 2);
+
+  // The first sampled day by which half the decay has happened. Sampled rather than solved: the
+  // curve is what the chart draws, and an answer the chart does not show would be worse than a
+  // day's imprecision.
+  const half = curve.find((p) => (p.pnl - now) / total >= 0.5) ?? curve.at(-1);
+  const lastWeekShare = round(lastWeek / total, 4);
+
+  return {
+    curve,
+    now,
+    end,
+    total,
+    lastWeek,
+    lastWeekShare,
+    halfwayDay: half.day,
+    halfwayDate: half.date,
+    shape: decayShape(lastWeekShare, position.dte),
+  };
+}
+
+/**
+ * Whether the decay is front-loaded, steady, or back-loaded — measured, not assumed.
+ *
+ * "THETA ACCELERATES INTO EXPIRY" IS ONLY TRUE NEAR THE MONEY, and this app's house strategy is a
+ * credit spread deliberately placed far from it. Run the numbers on a 95/90 put spread with the
+ * stock at 100 and the final week carries 14% of the decay — less than the 23% a straight line
+ * would give it — because by then the options are nearly worthless and there is little left to
+ * take. At the money the same spread puts 69% in the last week. The two shapes are opposite, and
+ * a chart that printed the folk wisdom under both would be teaching the wrong lesson half the
+ * time, most often on exactly the trades this app is built to find.
+ *
+ * Judged against what a straight line would put in the final week (7/dte of the total), so the
+ * comparison holds whatever the holding period.
+ */
+export function decayShape(lastWeekShare, dte) {
+  if (lastWeekShare === null || !(dte > 7)) return 'even';
+
+  const linear = 7 / dte;
+  const ratio = lastWeekShare / linear;
+
+  if (ratio > 1.4) return 'late';
+  if (ratio < 0.7) return 'early';
+  return 'even';
+}
+
+/**
  * A price × date P&L table. Rows are evenly spaced prices around the current one, snapped to
  * `priceStep`, plus — as rows of their own — the price now, both strikes and the break-even.
  * Columns run from today to expiry.

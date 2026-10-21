@@ -9,6 +9,7 @@ import {
   pickLongOption,
   pickCallSpread,
   pickPutSpread,
+  decayProfile,
   pnlAt,
   pnlCurve,
   pnlGrid,
@@ -20,9 +21,25 @@ import { api } from '../api.js';
 import { replaceParams } from '../router.js';
 import { money, pct, price, shortDate, signed, signedNumber } from '../format.js';
 import PayoffChart from '../components/PayoffChart.jsx';
+import DecayChart from '../components/DecayChart.jsx';
 import PnlGrid from '../components/PnlGrid.jsx';
 
 const TARGET_DTE = 35;
+
+/**
+ * What the curve's shape actually says — picked from the measured numbers, not asserted.
+ *
+ * "Theta accelerates into expiry" is the line everyone repeats, and it is only true near the
+ * money. These strikes are usually placed well away from it, where decay is front-loaded and
+ * theta fades. Printing the wrong one of these under the chart would teach the opposite of what
+ * the chart is showing. See decayShape in domain/simulate.js.
+ */
+const DECAY_SHAPES = {
+  late: 'Most of it lands in the final stretch: these strikes are close enough to the money that there is still real time value in them, and it falls away quickly at the end.',
+  early:
+    'Most of it is over early. These strikes are far enough from the price that the options are nearly worthless well before expiry — theta fades rather than accelerating, which is the opposite of the usual rule of thumb.',
+  even: 'It comes off at a fairly steady rate, with no part of the period doing much more of the work than another.',
+};
 
 /**
  * What each strategy needs from the controls, and how to describe it. Keeping the differences in
@@ -220,6 +237,9 @@ export default function SimulatorPage({ watchlist, params }) {
       summary: summarize(position),
       daysForward: d,
       curve: pnlCurve(position, { daysForward: d, ivShift }),
+      // At today's price, not at the what-if price: this answers "what does waiting do", and
+      // mixing a price move into it would make it answer two questions at once.
+      decay: decayProfile(position, { ivShift }),
       greeks: positionGreeks(position, position.spot, d, ivShift),
       atSpot: pnlAt(position, position.spot, d, ivShift),
       grid: pnlGrid(position, { rows: 11, columns: 6, ivShift }),
@@ -605,6 +625,49 @@ export default function SimulatorPage({ watchlist, params }) {
                 {sim.daysForward === 0 && !ivShift
                   ? 'These are the values now.'
                   : `These are the values at ${projectedLabel}.`}
+              </p>
+            </section>
+
+            {/* Time decay as its own view. The payoff chart above is P&L across PRICE on one day;
+                this is P&L across DAYS at one price, which is the shape a slider cannot show. */}
+            <section className="panel decay-panel">
+              <div className="chart-head">
+                <h2>What time alone does</h2>
+                <span className="muted small">at {price(position.spot)}, implied vol unchanged</span>
+              </div>
+
+              <DecayChart curve={sim.decay.curve} daysForward={sim.daysForward} />
+
+              <dl className="greeks decay-facts">
+                <Greek
+                  label="Time is worth"
+                  value={signed(sim.decay.total)}
+                  hint={`by ${shortDate(position.expiration)} if nothing moves`}
+                />
+                <Greek
+                  label="Final week"
+                  value={signed(sim.decay.lastWeek)}
+                  hint={
+                    sim.decay.lastWeekShare === null
+                      ? 'of that total'
+                      : `${pct(sim.decay.lastWeekShare, 0)} of the whole`
+                  }
+                />
+                <Greek
+                  label="Halfway"
+                  value={sim.decay.halfwayDay === null ? '—' : `T+${sim.decay.halfwayDay}`}
+                  hint={
+                    sim.decay.halfwayDate === null
+                      ? 'nothing to decay'
+                      : `${shortDate(sim.decay.halfwayDate)} — half of it is done`
+                  }
+                />
+              </dl>
+
+              <p className="muted small greeks-note">
+                {DECAY_SHAPES[sim.decay.shape]}{' '}
+                <strong>This holds the price still</strong>, which it will not be — so read it as what
+                waiting is worth, not as what the position will make.
               </p>
             </section>
 

@@ -7,12 +7,16 @@ import { creditSpreadMetrics } from '../src/domain/metrics.js';
 import { daysBetween } from '../src/domain/math.js';
 import { longOptionMetrics } from '../src/domain/metrics.js';
 import {
+  addDays,
   breakEvens,
   createLongOption,
   createSpread,
+  decayCurve,
+  decayProfile,
+  decayShape,
+  niceStep,
   pickCallSpread,
   pickLongOption,
-  niceStep,
   pickPutSpread,
   pnlAt,
   pnlAtExpiry,
@@ -524,4 +528,196 @@ test('a short call below the price is flagged as starting in the money', async (
   const spread = createSpread({ ...picked, type: 'call', spot: chain.spot, expiration: chain.expiration, asOf, atmIv: 0.2 });
 
   assert.match(summarize(spread).warnings.join(' '), /starts in the money/);
+});
+
+// --- time decay -----------------------------------------------------------------------------
+
+/** A put credit spread with a month to run, from the same fixtures the rest of this file uses. */
+const decaySpread = ({ dte = 30, iv = 0.25, quantity = 1 } = {}) =>
+  createSpread({
+    shortLeg: { type: 'put', strike: 95, bid: 2.0, ask: 2.1, iv },
+    longLeg: { type: 'put', strike: 90, bid: 0.9, ask: 1.0, iv },
+    spot: 100,
+    expiration: addDays('2026-10-21', dte),
+    asOf: '2026-10-21',
+    atmIv: iv,
+    quantity,
+  });
+
+const decayLongCall = ({ dte = 30, iv = 0.25 } = {}) =>
+  createLongOption({
+    leg: { type: 'call', strike: 100, bid: 2.8, ask: 2.9, iv },
+    type: 'call',
+    spot: 100,
+    expiration: addDays('2026-10-21', dte),
+    asOf: '2026-10-21',
+    atmIv: iv,
+  });
+
+test('the decay curve runs from today to expiry and ends at the expiry payoff', () => {
+  const position = decaySpread({ dte: 30 });
+  const curve = decayCurve(position);
+
+  assert.equal(curve[0].day, 0);
+  assert.equal(curve[0].daysLeft, 30);
+  assert.equal(curve.at(-1).day, 30, 'expiry is always sampled exactly — it is where the kink is');
+  assert.equal(curve.at(-1).daysLeft, 0);
+
+  // The last point is the real payoff, not a Black-Scholes value with a hair of time left.
+  assert.ok(Math.abs(curve.at(-1).pnl - pnlAtExpiry(position, position.spot)) < 0.005);
+  assert.equal(curve[0].pnl, pnlAt(position, position.spot, 0, 0));
+});
+
+test('a credit spread gains as time passes, and a long option bleeds', () => {
+  // The sign of the whole exercise. Out of the money and nothing moving, the spread walks up to
+  // its credit; the call walks down to nothing.
+  const spread = decayProfile(decaySpread());
+  const call = decayProfile(decayLongCall());
+
+  assert.ok(spread.total > 0, `credit spread should gain, got ${spread.total}`);
+  assert.ok(call.total < 0, `long call should bleed, got ${call.total}`);
+
+  // And monotonically, with the price held still: no day is worse than the one before it.
+  for (let i = 1; i < spread.curve.length; i++) {
+    assert.ok(spread.curve[i].pnl >= spread.curve[i - 1].pnl - 0.01, `day ${spread.curve[i].day}`);
+  }
+});
+
+test('the shape of the decay depends on moneyness, and the app measures it rather than assuming', () => {
+  // THE FOLK WISDOM IS WRONG FOR THIS APP'S OWN HOUSE TRADE. "Theta accelerates into expiry" is
+  // true at the money and false away from it, and a credit spread is deliberately placed away
+  // from it. These two assertions are opposite on purpose.
+  const otm = decayProfile(decaySpread({ dte: 30 })); // 95/90 with the stock at 100
+  const atm = decayProfile(
+    createSpread({
+      shortLeg: { type: 'put', strike: 100, bid: 2.0, ask: 2.1, iv: 0.25 },
+      longLeg: { type: 'put', strike: 95, bid: 0.9, ask: 1.0, iv: 0.25 },
+      spot: 100,
+      expiration: addDays('2026-10-21', 30),
+      asOf: '2026-10-21',
+      atmIv: 0.25,
+    }),
+  );
+
+  // A straight line would put 7/30 — about 23% — in the final week.
+  assert.ok(otm.lastWeekShare < 0.2, `out of the money should be front-loaded, got ${otm.lastWeekShare}`);
+  assert.equal(otm.shape, 'early');
+
+  assert.ok(atm.lastWeekShare > 0.5, `at the money should be back-loaded, got ${atm.lastWeekShare}`);
+  assert.equal(atm.shape, 'late');
+
+  // And the halfway marker agrees with each.
+  assert.ok(otm.halfwayDay <= 15, `got T+${otm.halfwayDay}`);
+  assert.ok(atm.halfwayDay > 20, `got T+${atm.halfwayDay}`);
+});
+
+test('the shape classifier is judged against a straight line, so it holds at any length', () => {
+  // 7/dte is what a flat rate would put in the final week; the classifier compares against that
+  // rather than a fixed percentage, or every long-dated position would read as front-loaded.
+  assert.equal(decayShape(0.9, 30), 'late');
+  assert.equal(decayShape(0.23, 30), 'even', 'exactly linear');
+  assert.equal(decayShape(0.05, 30), 'early');
+
+  // A 90-day position: a straight line gives the final week 7/90, under 8%. So 9% is steady and
+  // 12% — which looks tiny next to the 30-day numbers — is already half again over the line.
+  assert.equal(decayShape(0.09, 90), 'even');
+  assert.equal(decayShape(0.12, 90), 'late');
+  assert.equal(decayShape(0.04, 90), 'early');
+
+  // Under a week there is no "final week" to compare, so it declines to classify.
+  assert.equal(decayShape(1, 5), 'even');
+  assert.equal(decayShape(null, 30), 'even');
+});
+
+test('the shares are of the signed total, so they read the same way for a long option', () => {
+  // A long call's total is negative. Dividing one negative by another keeps the share positive,
+  // which is what makes "38% of it in the last week" true of both sides.
+  const { total, lastWeek, lastWeekShare } = decayProfile(decayLongCall({ dte: 30 }));
+
+  assert.ok(total < 0);
+  assert.ok(lastWeek < 0, 'the last week bleeds too');
+  assert.ok(lastWeekShare > 0 && lastWeekShare <= 1.0001, `got ${lastWeekShare}`);
+});
+
+test('quantity scales the decay exactly, because it is the same position twice', () => {
+  const one = decayProfile(decaySpread({ quantity: 1 }));
+  const three = decayProfile(decaySpread({ quantity: 3 }));
+
+  assert.ok(Math.abs(three.total - one.total * 3) < 0.02);
+  assert.ok(Math.abs(three.lastWeek - one.lastWeek * 3) < 0.02);
+  assert.equal(three.halfwayDay, one.halfwayDay, 'the shape is the same, only the scale differs');
+});
+
+test('a position expiring today has no decay left, and says so rather than dividing by zero', () => {
+  const position = decaySpread({ dte: 0 });
+  const profile = decayProfile(position);
+
+  assert.equal(profile.curve.length, 1);
+  assert.equal(profile.total, 0);
+  assert.equal(profile.lastWeekShare, null, 'not NaN, not Infinity');
+  assert.equal(profile.halfwayDay, null);
+});
+
+test('a long-dated position is thinned, not drawn at 365 points', () => {
+  // A LEAP does not need a point per day to show its shape, and 365 SVG segments on a phone is
+  // a cost with no reader.
+  const curve = decayCurve(decaySpread({ dte: 365 }));
+
+  assert.ok(curve.length <= 125, `expected it thinned, got ${curve.length} points`);
+  assert.equal(curve.at(-1).day, 365, 'and expiry is still exact');
+
+  // A short one is sampled every day.
+  assert.equal(decayCurve(decaySpread({ dte: 30 })).length, 31);
+});
+
+test('theta on the curve is the theta at that day, not today’s repeated', () => {
+  // Whichever way it goes, it must MOVE: quoting today's theta across the whole curve would be
+  // the exact error this chart exists to correct. On an out-of-the-money spread it fades, which
+  // is the direction most people would guess wrong.
+  const curve = decayCurve(decaySpread({ dte: 30 }));
+
+  const now = curve[0].theta;
+  const late = curve.find((p) => p.day === 28).theta;
+
+  assert.ok(now > 0 && late > 0, 'a credit spread collects theta throughout');
+  assert.ok(late < now * 0.5, `out of the money, theta should fade: ${now} → ${late}`);
+
+  // At the money it goes the other way, which is why the page reads the shape off the numbers.
+  const atmCurve = decayCurve(
+    createSpread({
+      shortLeg: { type: 'put', strike: 100, bid: 2.0, ask: 2.1, iv: 0.25 },
+      longLeg: { type: 'put', strike: 95, bid: 0.9, ask: 1.0, iv: 0.25 },
+      spot: 100,
+      expiration: addDays('2026-10-21', 30),
+      asOf: '2026-10-21',
+      atmIv: 0.25,
+    }),
+  );
+  assert.ok(
+    atmCurve.find((p) => p.day === 28).theta > atmCurve[0].theta,
+    'at the money it accelerates',
+  );
+});
+
+test('the decay curve agrees with the payoff chart where the two meet', () => {
+  // Both are drawn from pnlAt, and a reader will compare them: the decay curve at T+N must be
+  // the payoff curve's projected value at today's price on that same day.
+  const position = decaySpread({ dte: 30 });
+  const curve = decayCurve(position);
+
+  for (const day of [0, 7, 21, 30]) {
+    const fromDecay = curve.find((p) => p.day === day).pnl;
+    const fromPayoff = pnlAt(position, position.spot, day, 0);
+    assert.ok(Math.abs(fromDecay - fromPayoff) < 0.005, `day ${day}: ${fromDecay} vs ${fromPayoff}`);
+  }
+});
+
+test('an IV shift moves the whole curve, and the chart says the price is what is held still', () => {
+  // The caveat the page prints is only honest if the curve really does respond to vol.
+  const position = decaySpread({ dte: 30 });
+  const flat = decayProfile(position, { ivShift: 0 });
+  const higher = decayProfile(position, { ivShift: 10 });
+
+  assert.ok(higher.now < flat.now, 'a vol spike hurts a short-vega position today');
+  assert.ok(Math.abs(higher.end - flat.end) < 0.01, 'but expiry is intrinsic, so vol cannot touch it');
 });
