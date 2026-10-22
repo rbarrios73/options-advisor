@@ -968,6 +968,85 @@ test('the timer writes briefs for accounts that have something to say about', as
   assert.equal(second.written, 0);
 });
 
+test('a long option can be tracked, and is never read as if you had sold it', async (t) => {
+  // The route the Save button posts to is the one the Positions page already uses, so what is
+  // worth testing is the semantics of the new types over real HTTP.
+  const s = await startServer({ now: () => new Date('2026-10-22T13:30:00Z') });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  // SPY is 552.40 under the mock provider, so a 540 call is deep in the money.
+  const saved = await me('/api/positions', {
+    method: 'POST',
+    body: {
+      symbol: 'SPY', type: 'LC', contracts: 1, shortStrike: 540,
+      expiration: '2026-11-20', tradeDate: '2026-10-22', premium: -1850,
+    },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.type, 'LC');
+  assert.equal(saved.body.premium, -1850, 'the debit survives the round trip');
+
+  const row = (await me('/api/positions')).body.positions.find((p) => p.type === 'LC');
+
+  // In the money by twelve dollars, and silent — because that is good news for a call you own.
+  assert.ok(row.spot > row.shortStrike, 'it really is in the money');
+  assert.equal(row.breach, null, 'no breach reading on a position you bought');
+
+  // And nobody can assign you an option you own, whatever the dividend calendar says.
+  assert.equal(row.exDividend, null);
+
+  // It still gets a live delta, which is the part that does apply.
+  assert.ok(row.delta !== null, 'the leg is still priced');
+});
+
+test('the morning brief says nothing about a long call that is in the money', async (t) => {
+  const s = await startServer({ now: () => new Date('2026-10-22T13:30:00Z') });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  // Deep in the money and expiring this week: a SHORT call like this would be two findings.
+  await me('/api/positions', {
+    method: 'POST',
+    body: {
+      symbol: 'SPY', type: 'LC', contracts: 1, shortStrike: 500,
+      expiration: '2026-10-26', tradeDate: '2026-10-01', premium: -5200,
+    },
+  });
+
+  const { brief } = (await me('/api/brief')).body;
+  const codes = brief.findings.flatMap((f) => f.reasons.map((r) => r.code));
+
+  assert.ok(!codes.includes('breached'), 'in the money is not a problem for a position you own');
+  assert.ok(!codes.includes('assignment'), 'and nobody can assign it');
+  assert.ok(codes.includes('expiring'), 'but an expiry this week is still worth knowing');
+});
+
+test('the same contract sold instead of bought is flagged on both counts', async (t) => {
+  // The control for the two tests above: identical strike, identical expiry, opposite side.
+  const s = await startServer({ now: () => new Date('2026-10-22T13:30:00Z') });
+  t.after(s.close);
+  const me = s.client();
+  await me.signIn(ADMIN);
+
+  await me('/api/positions', {
+    method: 'POST',
+    body: {
+      symbol: 'SPY', type: 'CC', contracts: 1, shortStrike: 500,
+      expiration: '2026-10-26', tradeDate: '2026-10-01', premium: 5200,
+    },
+  });
+
+  const row = (await me('/api/positions')).body.positions[0];
+  assert.equal(row.breach.level, 'breached', 'sold, in the money, and it says so');
+
+  const { brief } = (await me('/api/brief')).body;
+  const codes = brief.findings.flatMap((f) => f.reasons.map((r) => r.code));
+  assert.ok(codes.includes('breached'));
+});
+
 // --- the dividend screen --------------------------------------------------------------------------
 
 test('the screen covers the watchlist and the holdings, and reads the provider for both', async (t) => {

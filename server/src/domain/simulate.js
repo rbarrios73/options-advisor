@@ -546,6 +546,57 @@ export function pnlCurve(position, { daysForward = 0, ivShift = 0, points = 240,
 }
 
 /**
+ * A simulated position, as a row the tracker will accept.
+ *
+ * The bridge between the two halves of the app, and it is a pure function so the mapping can be
+ * tested rather than discovered on the Positions page a week later.
+ *
+ * THE PREMIUM IS DOLLARS FOR THE WHOLE POSITION AND IS SIGNED. The simulator works in net per
+ * share — positive for a credit, negative for a debit — and the tracker stores what the broker's
+ * fill shows: ×100 per contract, ×quantity. A long option therefore lands as a NEGATIVE premium,
+ * which is not a bug to round away: it means the month's total is reduced by what the option cost,
+ * which is what happened.
+ *
+ * `fill` overrides the modelled price. It is the number only you know, and the tracker's whole
+ * premise is that those are typed rather than guessed — the simulator's figure is derived from a
+ * quote, not from your confirmation.
+ */
+export function trackerRowFrom(position, { symbol, account = '', fill = null, tradeDate = null, note = '' } = {}) {
+  const type = TRACKER_TYPES[position.kind];
+  if (!type || !symbol) return null;
+
+  const perShare = Number.isFinite(fill) ? fill : position.entry.net;
+
+  // A fill is typed as a positive number — nobody writes "-2.90" on a ticket — so its sign comes
+  // from the structure: you receive a credit and you pay a debit.
+  const signed = Number.isFinite(fill) ? Math.abs(fill) * Math.sign(position.entry.net || 1) : perShare;
+
+  return {
+    symbol: String(symbol).toUpperCase(),
+    type,
+    status: 'open',
+    account,
+    contracts: position.quantity,
+    // One strike field drives the tracker's lookups, and for a single long option that is simply
+    // its strike. The spread keeps the short/long pair it was built from.
+    shortStrike: position.short?.strike ?? position.legs[0].strike,
+    longStrike: position.long?.strike ?? null,
+    expiration: position.expiration,
+    tradeDate: tradeDate ?? position.asOf,
+    premium: round(signed * CONTRACT_MULTIPLIER * position.quantity, 2),
+    note,
+  };
+}
+
+/** Simulator strategy → the tracker's shorthand. The one place the two vocabularies meet. */
+export const TRACKER_TYPES = {
+  put_credit_spread: 'VPCS',
+  call_credit_spread: 'VCCS',
+  long_call: 'LC',
+  long_put: 'LP',
+};
+
+/**
  * What time alone does: the position's P&L at every day from now to expiry, with the price held
  * where it is.
  *

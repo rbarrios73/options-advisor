@@ -9,7 +9,16 @@
 // Pure, like everything else in domain/ — the browser imports it too, so the page can decide a
 // row is at risk without waiting for the server to say so.
 
-/** The strategies worth tracking, keyed by the shorthand a trading journal already uses. */
+/**
+ * The strategies worth tracking, keyed by the shorthand a trading journal already uses.
+ *
+ * `short` is load-bearing and is not decoration. Everything this app says about risk assumes you
+ * SOLD the option: "breached" means the price has gone through your strike, which is bad; the
+ * morning brief warns that a dividend can get your call assigned early. Both of those are
+ * nonsense for a position you bought — in the money is where a long option WANTS to be, and
+ * nobody can assign you something you own. So the long types carry short: false, and the places
+ * that reason about risk check it rather than looking only at `side`.
+ */
 export const POSITION_TYPES = {
   VPCS: { label: 'Vertical put credit spread', side: 'put', legs: 2, short: true },
   VCCS: { label: 'Vertical call credit spread', side: 'call', legs: 2, short: true },
@@ -18,7 +27,24 @@ export const POSITION_TYPES = {
   W: { label: 'Wheel', side: 'put', legs: 1, short: true },
   PMCC: { label: "Poor man's covered call", side: 'call', legs: 2, short: true },
   IC: { label: 'Iron condor', side: 'both', legs: 4, short: true },
+
+  // Bought, not sold: the premium is a debit and is stored negative, so a long option that
+  // expires worthless subtracts what it cost from the month's total — which is what happened.
+  LC: { label: 'Long call', side: 'call', legs: 1, short: false },
+  LP: { label: 'Long put', side: 'put', legs: 1, short: false },
 };
+
+/**
+ * The side this position can be hurt on, or null when it cannot be hurt that way at all.
+ *
+ * One place to ask "is this a short call?", used by the ex-dividend warning and by anything else
+ * that reasons about assignment. Returning null for a long position is what stops those features
+ * firing on something nobody can assign.
+ */
+export function shortSideOf(type) {
+  const spec = POSITION_TYPES[type];
+  return spec?.short ? spec.side : null;
+}
 
 /**
  * Where a position is in its life. Deliberately NOT the same axis as risk: a position can be open
@@ -109,7 +135,9 @@ export function breachOf(position, spot, band = 0.02) {
   const { shortStrike, type } = position;
   if (!(spot > 0) || !(shortStrike > 0) || position.status !== 'open') return null;
 
-  const side = POSITION_TYPES[type]?.side;
+  // A bought option has no breach to report. Through the strike is where it makes money, and
+  // flagging that as a problem would be worse than saying nothing — it would be exactly wrong.
+  const side = shortSideOf(type);
   if (!side) return null;
 
   const put = () => {

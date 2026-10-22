@@ -30,6 +30,7 @@ import { cleanTheme } from './domain/theme.js';
 import {
   POSITION_TYPES,
   breachOf,
+  shortSideOf,
   cleanGoals,
   daysLeft,
   premiumTotals,
@@ -680,7 +681,7 @@ export function createApp({ config, db = null }) {
     // day in the scanner, and null for any provider without the endpoint, so this is usually free.
     const dividends = new Map();
     for (const symbol of symbols) {
-      if (!open.some((p) => p.symbol === symbol && POSITION_TYPES[p.type]?.side === 'call')) continue;
+      if (!open.some((p) => p.symbol === symbol && shortSideOf(p.type) === 'call')) continue;
       try {
         dividends.set(symbol, summariseHistory(await scanner.dividends(symbol), { asOf }));
       } catch {
@@ -693,7 +694,12 @@ export function createApp({ config, db = null }) {
       const spot = quote?.last ?? null;
       const chain = chains.get(`${position.symbol}|${position.expiration}`) ?? null;
 
+      // Two different questions. `side` is which option this is, and finds the leg to read a
+      // delta off — a long call has one as much as a short one does. `shortSide` is whether you
+      // SOLD it, which is what the risk readings below turn on.
       const side = POSITION_TYPES[position.type]?.side;
+      const shortSide = shortSideOf(position.type);
+
       const leg =
         chain && position.shortStrike > 0 && side && side !== 'both'
           ? (chain.options ?? []).find((o) => o.type === side && Math.abs(o.strike - position.shortStrike) < 0.001)
@@ -707,21 +713,22 @@ export function createApp({ config, db = null }) {
         delta: leg?.delta ?? null,
         daysLeft: daysLeft(position.expiration, asOf),
         breach: spot == null ? null : breachOf(position, spot),
-        // Why a short call can be taken off you a month early. Only ever set on the call side,
-        // only when an ex-date falls before the expiry, and only while the position is open.
+        // Why a short call can be taken off you a month early. Only ever set on a call you
+        // SOLD — nobody can assign you one you own — only when an ex-date falls before the
+        // expiry, and only while the position is open.
         exDividend:
           position.status !== 'open'
             ? null
             : exDividendWarning(
                 {
-                  side,
+                  side: shortSide,
                   expiration: position.expiration,
                   nextExDate: dividends.get(position.symbol)?.nextExDate ?? null,
                   perShare: perPayment(
                     dividends.get(position.symbol)?.annualRate,
                     dividends.get(position.symbol)?.frequency,
                   ),
-                  extrinsic: extrinsicOf(leg, spot, position.shortStrike, side),
+                  extrinsic: extrinsicOf(leg, spot, position.shortStrike, shortSide),
                 },
                 asOf,
               ),

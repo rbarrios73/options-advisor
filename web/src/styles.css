@@ -1051,3 +1051,27 @@ table.dividend-table tr.quiet strong { color: var(--text-secondary); }
    thing — a number with a unit — and a second visual idiom for them would be noise. */
 .decay-facts { margin-top: 12px; }
 .decay-panel .chart-head { margin-bottom: 10px; }
+
+/* --- saving a simulation to the tracker ------------------------------------------------------ */
+
+.save-position { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+
+.save-form { border-left: 3px solid var(--accent); }
+.save-form h3 { margin: 0 0 4px; font-size: 14px; }
+.save-form > p { margin: 0 0 12px; max-width: 80ch; }
+
+.save-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.save-fields .field { flex: 1 1 180px; }
+.save-fields .field.wide { flex: 2 1 300px; }
+
+.save-form .row-actions { align-items: center; }
+.save-form .row-actions .small { flex: 1 1 260px; }
+
+/* Confirmation stays where the button was, rather than moving the page under the cursor. */
+.saved-note {
+  margin-bottom: 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--good);
+  border-radius: 6px;
+  background: var(--good-wash);
+}

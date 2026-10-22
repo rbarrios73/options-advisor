@@ -22,6 +22,7 @@ import { replaceParams } from '../router.js';
 import { money, pct, price, shortDate, signed, signedNumber } from '../format.js';
 import PayoffChart from '../components/PayoffChart.jsx';
 import DecayChart from '../components/DecayChart.jsx';
+import SavePosition from '../components/SavePosition.jsx';
 import PnlGrid from '../components/PnlGrid.jsx';
 
 const TARGET_DTE = 35;
@@ -627,6 +628,16 @@ export default function SimulatorPage({ watchlist, params }) {
                   : `These are the values at ${projectedLabel}.`}
               </p>
             </section>
+
+            {/* Once the simulation is one you would actually open, this records it. Placed under
+                the chart and the greeks — after the things that decide whether to open it, before
+                the detail you read once you have. */}
+            <SavePosition
+              key={`${chain.symbol}-${position.kind}-${position.expiration}-${position.legs.map((l) => l.strike).join('-')}`}
+              position={position}
+              symbol={chain.symbol}
+              pricedAt={position.entry.source === 'override' ? 'entered' : position.entry.source}
+            />
 
             {/* Time decay as its own view. The payoff chart above is P&L across PRICE on one day;
                 this is P&L across DAYS at one price, which is the shape a slider cannot show. */}

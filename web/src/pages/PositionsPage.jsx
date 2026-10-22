@@ -297,14 +297,18 @@ function AddPosition({ onAdd, busy }) {
       </label>
 
       <label className="control">
-        <span>Short strike</span>
+        {/* A long option has one strike and nothing short about it, so the label follows the type
+            rather than asking someone to enter a bought call's strike under "short strike". */}
+        <span>{POSITION_TYPES[draft.type]?.short === false ? 'Strike' : 'Short strike'}</span>
         <input type="number" step="0.5" className="w-qty" value={draft.shortStrike} onChange={set('shortStrike')} />
       </label>
 
-      <label className="control">
-        <span>Long strike</span>
-        <input type="number" step="0.5" className="w-qty" value={draft.longStrike} onChange={set('longStrike')} />
-      </label>
+      {POSITION_TYPES[draft.type]?.legs !== 1 && (
+        <label className="control">
+          <span>Long strike</span>
+          <input type="number" step="0.5" className="w-qty" value={draft.longStrike} onChange={set('longStrike')} />
+        </label>
+      )}
 
       <label className="control">
         <span>Expiry</span>

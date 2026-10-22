@@ -480,6 +480,25 @@ the account if it is deleted.
 A short call also carries an **ex-dividend flag** when a dividend falls before the expiry — see
 the Dividends tab below for why that is a way to lose a position a month early.
 
+### Positions you bought, not sold
+
+Seven of the nine types are short-premium structures. Two — **LC** and **LP**, long call and long
+put — are not, and they arrived with the Simulator's Save button. They carry `short: false`, and
+that flag is load-bearing rather than decorative, because almost everything this app says about
+risk assumes you *sold* the option:
+
+- **No breach reading.** "In the money" is the alarm on a position you sold and the good news on
+  one you bought. Reporting it would not merely be unhelpful, it would be exactly backwards, so
+  `breachOf` returns null for them.
+- **No early-assignment warning.** Nobody can assign you an option you own, whatever the dividend
+  calendar says. The morning brief asks `shortSideOf(type)` — "did you *sell* this?" — rather than
+  `side`, which only says which option it is.
+- **The premium is stored negative.** A debit is money out, so a long call that expires worthless
+  subtracts what it cost from the month's total, which is what happened. A tracker that reported
+  zero there would be flattering you.
+
+A live delta is still fetched for them, because that part applies either way.
+
 ## The Dividends tab
 
 Two questions on one page: what the names you follow pay, ranked, and what the shares you hold
@@ -674,6 +693,25 @@ position will make".
 It is also honest about the unhappy case: a credit spread whose short strike is already through
 the price shows a **negative** total, because for that position time is working against you.
 
+### Saving it to the tracker
+
+**Save to Positions** records the simulation as a trade you have opened. It opens a short form
+rather than saving on one press, and the reason is the tracker's own premise: everything the
+market can tell us is fetched, and everything only you know is typed. The strikes, the expiry and
+the contract count come straight from the simulation; the **fill, the account and the trade date**
+are yours to set, because the simulator's price is derived from a quote and is not what your
+broker gave you. Leave the fill blank and it uses the modelled price, named on the hint so you
+know which one you are accepting.
+
+The button's label shows the premium exactly as it will be stored — `Save at +$115` — because the
+sign and the scale are the two things most likely to look wrong afterwards. Dollars for the whole
+position, ×100 per contract and ×quantity: the error this avoids is a goal total that is 200× out.
+A credit stores positive and a **debit stores negative**, which the form says in words before it
+saves rather than leaving you to query it later.
+
+It posts to the same `/api/positions` route the Positions page uses, with the same validation.
+Nothing here is a second way to create a position.
+
 The page's address describes what is on screen (`#/simulator?symbol=SPY&exp=…&delta=0.2&width=5`),
 so a setup can be bookmarked or sent to someone.
 
@@ -801,6 +839,21 @@ premium moves a goal and only on the day it was settled, that an assignment loss
 net, and that the week starts on Monday with Sunday belonging to the week that just ended. Over
 real HTTP: that one dead ticker leaves one row showing dashes rather than emptying the table, that
 an account cannot see or change another's positions, and that every route needs a session.
+
+For saving a simulation: that every one of the four strategies maps to a type the tracker has, so
+the button cannot 400 on one of them; that the row the mapping produces is one `cleanPosition`
+accepts, since that is what gets posted; that the premium is dollars for the whole position —
+two contracts filled at 1.05 is $210, not 1.05 and not $105; that a typed fill takes its sign from
+the structure rather than from whether the person remembered a minus; and that a long option saves
+as a debit while a credit spread saves as a credit.
+
+For positions you bought rather than sold: that a long call deep in the money reports no breach
+while the identical strike sold reports one — asserted side by side, because the reading is not
+merely unhelpful on the long side but backwards; that `shortSideOf` answers "did you sell this"
+rather than "which option is it", so a long call is still a call and still not assignable; that
+the morning brief stays silent about a long call in the money but still flags its expiry; and that
+a long option expiring worthless takes its cost off the month's total rather than counting as
+nothing.
 
 For time decay: that the curve ends on the real expiry payoff rather than a Black-Scholes value
 with a hair of time left; that a credit spread gains as time passes and a long option bleeds, and

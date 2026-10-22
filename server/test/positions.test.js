@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_GOALS,
+  POSITION_TYPES,
   breachOf,
   cleanGoals,
   cleanPosition,
   daysLeft,
   premiumTotals,
+  shortSideOf,
   sortPositions,
   startOfWeek,
 } from '../src/domain/positions.js';
@@ -171,4 +173,64 @@ test('days left counts down and goes negative once it has passed', () => {
   assert.equal(daysLeft('2026-11-06', '2026-10-06'), 31);
   assert.equal(daysLeft('2026-10-06', '2026-10-06'), 0);
   assert.equal(daysLeft('2026-10-02', '2026-10-06'), -4);
+});
+
+// --- positions you bought rather than sold ----------------------------------------------------
+
+test('a long option has no breach, because through the strike is where it wants to be', () => {
+  // The reading would not just be unhelpful, it would be backwards: "in the money" is the alarm
+  // on a position you sold and the good news on one you bought.
+  const longCall = { symbol: 'SPY', type: 'LC', status: 'open', shortStrike: 100, expiration: '2026-11-20' };
+  const shortCall = { ...longCall, type: 'CC' };
+
+  assert.equal(breachOf(longCall, 120), null, 'deep in the money and still silent');
+  assert.equal(breachOf(longCall, 80), null);
+
+  // The same price on the same strike, sold instead of bought, is breached.
+  assert.equal(breachOf(shortCall, 120).level, 'breached');
+});
+
+test('shortSideOf answers "did you sell this", not "which option is it"', () => {
+  assert.equal(shortSideOf('CC'), 'call');
+  assert.equal(shortSideOf('VCCS'), 'call');
+  assert.equal(shortSideOf('CSP'), 'put');
+  assert.equal(shortSideOf('IC'), 'both');
+
+  // The two that matter: a long call IS a call, and you cannot be assigned on it.
+  assert.equal(POSITION_TYPES.LC.side, 'call', 'it is still a call');
+  assert.equal(shortSideOf('LC'), null, 'but not one you sold');
+  assert.equal(shortSideOf('LP'), null);
+
+  assert.equal(shortSideOf('nonsense'), null);
+});
+
+test('the long types are storable, and keep a negative premium', () => {
+  const row = cleanPosition({
+    symbol: 'SPY',
+    type: 'LC',
+    shortStrike: 105,
+    expiration: '2026-11-20',
+    contracts: 1,
+    premium: -290,
+  });
+
+  assert.ok(row);
+  assert.equal(row.type, 'LC');
+  assert.equal(row.premium, -290, 'a debit survives as a debit');
+});
+
+test('a long option that expires worthless takes its cost off the total', () => {
+  // The accounting consequence of storing a debit. A month with one $290 call that expired is a
+  // month down $290, and a tracker that reported zero would be flattering you.
+  const totals = premiumTotals(
+    [
+      { symbol: 'SPY', type: 'LC', status: 'closed', premium: -290, closedAt: '2026-10-22', expiration: '2026-11-20' },
+      { symbol: 'SPY', type: 'VPCS', status: 'closed', premium: 140, closedAt: '2026-10-22', expiration: '2026-11-20' },
+    ],
+    { today: '2026-10-22', goals: DEFAULT_GOALS },
+  );
+
+  assert.equal(totals.today.net, -150, '140 collected less 290 paid');
+  assert.equal(totals.today.premium, -150);
+  assert.ok(totals.today.progress <= 0, 'and a day in the red is not progress towards a goal');
 });

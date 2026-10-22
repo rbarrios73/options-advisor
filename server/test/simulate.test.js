@@ -7,6 +7,7 @@ import { creditSpreadMetrics } from '../src/domain/metrics.js';
 import { daysBetween } from '../src/domain/math.js';
 import { longOptionMetrics } from '../src/domain/metrics.js';
 import {
+  TRACKER_TYPES,
   addDays,
   breakEvens,
   createLongOption,
@@ -24,7 +25,9 @@ import {
   pnlGrid,
   positionGreeks,
   summarize,
+  trackerRowFrom,
 } from '../src/domain/simulate.js';
+import { POSITION_TYPES, cleanPosition } from '../src/domain/positions.js';
 
 const asOf = '2026-09-21';
 const provider = createMockProvider({ today: new Date(`${asOf}T00:00:00Z`) });
@@ -720,4 +723,100 @@ test('an IV shift moves the whole curve, and the chart says the price is what is
 
   assert.ok(higher.now < flat.now, 'a vol spike hurts a short-vega position today');
   assert.ok(Math.abs(higher.end - flat.end) < 0.01, 'but expiry is intrinsic, so vol cannot touch it');
+});
+
+// --- saving a simulation to the tracker -------------------------------------------------------
+
+const savedSpread = () =>
+  createSpread({
+    shortLeg: { type: 'put', strike: 95, bid: 2.0, ask: 2.1, iv: 0.25 },
+    longLeg: { type: 'put', strike: 90, bid: 0.9, ask: 1.0, iv: 0.25 },
+    spot: 100,
+    expiration: '2026-11-20',
+    asOf: '2026-10-22',
+    atmIv: 0.25,
+    quantity: 2,
+  });
+
+const savedCall = () =>
+  createLongOption({
+    leg: { type: 'call', strike: 105, bid: 2.8, ask: 2.9, iv: 0.25 },
+    type: 'call',
+    spot: 100,
+    expiration: '2026-11-20',
+    asOf: '2026-10-22',
+    atmIv: 0.25,
+  });
+
+test('a simulated spread becomes a tracker row the Positions page would have written', () => {
+  const row = trackerRowFrom(savedSpread(), { symbol: 'spy', account: 'Fidelity IRA' });
+
+  assert.equal(row.symbol, 'SPY', 'upper-cased, like everything else stored');
+  assert.equal(row.type, 'VPCS');
+  assert.equal(row.status, 'open');
+  assert.equal(row.shortStrike, 95);
+  assert.equal(row.longStrike, 90);
+  assert.equal(row.expiration, '2026-11-20');
+  assert.equal(row.contracts, 2);
+  assert.equal(row.tradeDate, '2026-10-22', 'the simulation’s own date, not today');
+  assert.equal(row.account, 'Fidelity IRA');
+
+  // Whatever cleanPosition does to it, it must survive — this is the row that gets POSTed.
+  assert.ok(cleanPosition(row), 'the tracker accepts it');
+  assert.equal(cleanPosition(row).type, 'VPCS');
+});
+
+test('the premium is dollars for the whole position, not net per share', () => {
+  // The error this guards against is a goal total that is 100× or 200× out. Two contracts of a
+  // spread filled at 1.00 is $200, not 1.00 and not $100.
+  const position = savedSpread(); // 2 contracts
+  const row = trackerRowFrom(position, { symbol: 'SPY', fill: 1.05 });
+
+  assert.equal(row.premium, 210);
+  assert.equal(trackerRowFrom(position, { symbol: 'SPY', fill: 1.05 }).contracts, 2);
+
+  // And without a fill it uses the simulation's own net, scaled the same way.
+  const modelled = trackerRowFrom(position, { symbol: 'SPY' });
+  assert.ok(Math.abs(modelled.premium - position.entry.net * 100 * 2) < 0.01);
+});
+
+test('a long option is stored as a debit, and a credit as a credit', () => {
+  // Signed on purpose: what you paid should come off the month's total, because it did.
+  const debit = trackerRowFrom(savedCall(), { symbol: 'SPY' });
+  const credit = trackerRowFrom(savedSpread(), { symbol: 'SPY' });
+
+  assert.ok(debit.premium < 0, `a bought call costs money, got ${debit.premium}`);
+  assert.ok(credit.premium > 0, `a credit spread collects it, got ${credit.premium}`);
+
+  // A typed fill is a positive number on a ticket; its sign comes from the structure, not from
+  // whether the person remembered to type a minus.
+  assert.ok(trackerRowFrom(savedCall(), { symbol: 'SPY', fill: 2.9 }).premium < 0);
+  assert.ok(trackerRowFrom(savedSpread(), { symbol: 'SPY', fill: 1.0 }).premium > 0);
+});
+
+test('a long option maps to its own type and carries its single strike', () => {
+  const row = trackerRowFrom(savedCall(), { symbol: 'SPY' });
+
+  assert.equal(row.type, 'LC');
+  assert.equal(row.shortStrike, 105, 'the one strike it has');
+  assert.equal(row.longStrike, null, 'and no second leg to invent');
+  assert.ok(cleanPosition(row), 'and the tracker accepts it');
+});
+
+test('every strategy the simulator offers maps to a type the tracker has', () => {
+  // The failure this prevents is a Save button that produces a 400 on one of the four strategies.
+  for (const [kind, type] of Object.entries(TRACKER_TYPES)) {
+    assert.ok(POSITION_TYPES[type], `${kind} → ${type} must exist in the tracker`);
+  }
+  assert.deepEqual(Object.keys(TRACKER_TYPES).sort(), [
+    'call_credit_spread',
+    'long_call',
+    'long_put',
+    'put_credit_spread',
+  ]);
+});
+
+test('a row with no symbol is refused rather than stored half-formed', () => {
+  assert.equal(trackerRowFrom(savedSpread(), {}), null);
+  assert.equal(trackerRowFrom({ ...savedSpread(), kind: 'iron_condor' }, { symbol: 'SPY' }), null);
 });
