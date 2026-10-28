@@ -43,6 +43,16 @@ cd web && npm install && npm run dev       # http://localhost:5173
 Node 18 or newer. On Windows PowerShell the same lines work, but `&&` needs PowerShell 7; in
 Windows PowerShell 5.1 run them as separate commands.
 
+**`npm install` again after pulling.** Dependencies have been added since the first version, and
+an old `node_modules` fails at startup naming a package rather than explaining itself. The usual
+symptom is `Cannot find package 'pg'`.
+
+**`npm run dev` is not optional for seeing your changes.** The UI is compiled: nothing in
+`web/src` reaches a browser until Vite builds it. In development `npm run dev` does that
+continuously; for a production-style run, `npm run build` writes `web/dist`, which is what the
+server serves and what Render builds on deploy. Editing `web/src` and restarting only the API
+changes nothing on screen, and the page will go on showing whatever was last built.
+
 It starts on the **mock provider** — synthetic chains, no token, no network — so you can see the
 whole thing work before wiring up data.
 
@@ -195,6 +205,13 @@ PGSSL=disable \
 ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='a long enough password' \
 npm start
 ```
+
+The Postgres driver is loaded **only when `DATABASE_URL` is set**. Single-user mode is documented
+as needing no database, and a top-level `import pg` made that untrue: the import runs on load
+whatever the configuration, so a machine without the driver installed could not start the app at
+all, in a mode that never touches it. It is now imported inside the branch that uses it, and
+there is a test on the source asserting it stays there — the property that broke is a property of
+the file, not of the function, since a static import is hoisted and no branching can undo it.
 
 `PGSSL=disable` because a local server has no certificate to present. Against a hosted database
 you leave it unset and TLS is used with the certificate verified — there are tests pinning that

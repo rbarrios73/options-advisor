@@ -7,7 +7,7 @@ import { createApp, prepare } from './app.js';
 import { createDb } from './db.js';
 import { startBriefTimer } from './brief.js';
 
-const db = createDb(config);
+const db = await createDb(config);
 const { app, accounts, users, provider, briefer, hasBuiltUi } = createApp({ config, db });
 
 const guarded = !accounts && Boolean(config.authPassword);

@@ -10,8 +10,6 @@
 // Accounts need a database because a file does not survive: on Render's free tier the filesystem
 // is wiped on every deploy and every cold start, so file-backed logins would vanish within hours.
 
-import pg from 'pg';
-
 import { DEFAULT_LIST_NAME, DEFAULT_WATCHLIST } from './domain/watchlist.js';
 
 /**
@@ -19,9 +17,23 @@ import { DEFAULT_LIST_NAME, DEFAULT_WATCHLIST } from './domain/watchlist.js';
  *
  * Managed Postgres (Neon, Supabase, Render) requires TLS; a local Postgres usually has none, so
  * SSL is on unless the host is local or PGSSL=disable says otherwise.
+ *
+ * THE DRIVER IS IMPORTED HERE, NOT AT THE TOP OF THE FILE, and that is the difference between
+ * this app's two modes being real and being theoretical. Single-user mode is documented as
+ * needing no database — settings live in a JSON file — but a top-level `import pg` is executed
+ * whether or not DATABASE_URL is set, so the whole app refused to boot on a machine where the
+ * driver was not installed, with a module-not-found error naming a package that mode never uses.
+ * A dependency that is only needed in one of two modes should only be loaded in that mode.
  */
-export function createDb({ databaseUrl, pgSsl }) {
+export async function createDb({ databaseUrl, pgSsl }) {
   if (!databaseUrl) return null;
+
+  const { default: pg } = await import('pg').catch(() => {
+    throw new Error(
+      'DATABASE_URL is set but the "pg" driver is not installed. Run `npm install` in server/, ' +
+        'or clear DATABASE_URL to run single-user with settings in a file.',
+    );
+  });
 
   const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(databaseUrl);
   const ssl = pgSsl === 'disable' || (pgSsl !== 'require' && local) ? false : { rejectUnauthorized: true };
