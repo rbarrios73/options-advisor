@@ -1075,3 +1075,9 @@ table.dividend-table tr.quiet strong { color: var(--text-secondary); }
   border-radius: 6px;
   background: var(--good-wash);
 }
+
+/* The Save control sits on the chart panel's title line. `margin-left: auto` pushes it to the
+   right of the heading; the form it opens is full width and wraps onto its own row beneath. */
+.chart-head .save-position { margin-left: auto; margin-bottom: 0; }
+.chart-head .save-form { flex-basis: 100%; margin: 10px 0 0; }
+.chart-head .saved-note { flex-basis: 100%; margin: 8px 0 0; }

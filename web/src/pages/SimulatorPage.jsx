@@ -551,6 +551,17 @@ export default function SimulatorPage({ watchlist, params }) {
                 <span className="muted small">
                   {chain.symbol} {price(chain.spot)} · ATM IV {pct(chain.atmIv)} · {dte} days
                 </span>
+
+                {/* On the title line, not a thousand pixels down the page between two panels,
+                    which is where this lived at first and where it was invisible. The action
+                    belongs beside the thing it acts on. The form it opens wraps to its own full
+                    width row beneath, which is what flex-wrap on this header is for. */}
+                <SavePosition
+                  key={`${chain.symbol}-${position.kind}-${position.expiration}-${position.legs.map((l) => l.strike).join('-')}`}
+                  position={position}
+                  symbol={chain.symbol}
+                  pricedAt={position.entry.source === 'override' ? 'entered' : position.entry.source}
+                />
               </div>
 
               <PayoffChart
@@ -628,16 +639,6 @@ export default function SimulatorPage({ watchlist, params }) {
                   : `These are the values at ${projectedLabel}.`}
               </p>
             </section>
-
-            {/* Once the simulation is one you would actually open, this records it. Placed under
-                the chart and the greeks — after the things that decide whether to open it, before
-                the detail you read once you have. */}
-            <SavePosition
-              key={`${chain.symbol}-${position.kind}-${position.expiration}-${position.legs.map((l) => l.strike).join('-')}`}
-              position={position}
-              symbol={chain.symbol}
-              pricedAt={position.entry.source === 'override' ? 'entered' : position.entry.source}
-            />
 
             {/* Time decay as its own view. The payoff chart above is P&L across PRICE on one day;
                 this is P&L across DAYS at one price, which is the shape a slider cannot show. */}

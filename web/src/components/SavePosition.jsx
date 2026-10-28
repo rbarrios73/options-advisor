@@ -74,13 +74,12 @@ export default function SavePosition({ position, symbol, pricedAt }) {
 
   if (!open) {
     return (
+      // No hint beside it: this sits on the chart panel's title line, which already names the
+      // position, and the form says the rest the moment it opens.
       <div className="save-position">
-        <button type="button" onClick={() => setOpen(true)}>
+        <button type="button" onClick={() => setOpen(true)} title={`Record this ${type?.label.toLowerCase()} as a trade you have opened`}>
           Save to Positions
         </button>
-        <span className="muted small">
-          records this as a trade you have opened — {type?.label.toLowerCase()}
-        </span>
       </div>
     );
   }
