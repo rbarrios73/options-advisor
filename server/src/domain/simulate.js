@@ -588,6 +588,45 @@ export function trackerRowFrom(position, { symbol, account = '', fill = null, tr
   };
 }
 
+/**
+ * The way back: a tracked position → the simulator link parameters that rebuild it.
+ *
+ * The inverse of trackerRowFrom. Without it "Simulate" on a saved trade opened a default spread
+ * on the same symbol — a different position, with different numbers, under your trade's name.
+ * The fill travels too, per share and unsigned as a ticket shows it, so the P&L is measured
+ * from what you were actually paid rather than from today's quote.
+ *
+ * Types the simulator cannot draw (a wheel, a condor, a covered call) get the symbol only, with
+ * `exact: false`, so the caller can say so instead of implying the chart is your trade.
+ */
+export function simulatorParamsFromPosition(position) {
+  const symbol = position?.symbol ? String(position.symbol).toUpperCase() : null;
+  if (!symbol) return null;
+
+  const kind = Object.keys(TRACKER_TYPES).find((k) => TRACKER_TYPES[k] === position.type);
+  if (!kind || !(position.shortStrike > 0) || !position.expiration) return { symbol, exact: false };
+
+  const contracts = Math.max(1, Math.round(position.contracts ?? 1));
+  const fill = Number.isFinite(position.premium)
+    ? round(Math.abs(position.premium) / (CONTRACT_MULTIPLIER * contracts), 2)
+    : null;
+
+  const spread = kind === 'put_credit_spread' || kind === 'call_credit_spread';
+  if (spread && !(position.longStrike > 0)) return { symbol, exact: false };
+
+  return {
+    symbol,
+    kind,
+    exp: position.expiration,
+    ...(spread
+      ? { short: position.shortStrike, long: position.longStrike }
+      : { strike: position.shortStrike }),
+    qty: contracts,
+    ...(fill > 0 ? { fill } : {}),
+    exact: true,
+  };
+}
+
 /** Simulator strategy → the tracker's shorthand. The one place the two vocabularies meet. */
 export const TRACKER_TYPES = {
   put_credit_spread: 'VPCS',

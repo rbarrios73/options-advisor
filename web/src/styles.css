@@ -303,10 +303,25 @@ table.results th {
   color: var(--muted);
   font-weight: 500;
   white-space: nowrap;
-  cursor: pointer;
   user-select: none;
 }
 table.results th.num { text-align: right; }
+
+/* The header sort buttons and the row's expand button are real buttons for the keyboard, but they
+   should read as the plain header text and score they replaced — so every button default is
+   undone here, and only the focus ring (from :focus-visible) is left to show where you are. */
+table.results .results-sort,
+table.results .results-expand {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+table.results .results-sort:hover { color: var(--text); }
+table.results .results-sort:focus-visible,
+table.results .results-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 table.results th:first-child, table.results td:first-child { text-align: left; }
 table.results td { padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 
@@ -1081,3 +1096,10 @@ table.dividend-table tr.quiet strong { color: var(--text-secondary); }
 .chart-head .save-position { margin-left: auto; margin-bottom: 0; }
 .chart-head .save-form { flex-basis: 100%; margin: 10px 0 0; }
 .chart-head .saved-note { flex-basis: 100%; margin: 8px 0 0; }
+
+/* --- scan progress and restored scans (Screener) ---------------------------------------------- */
+.scan-progress { display: grid; gap: 8px; }
+.scan-progress-line { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.scan-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.scan-progress p { margin: 0; }
+.scan-stale .link-button { margin-left: 4px; }

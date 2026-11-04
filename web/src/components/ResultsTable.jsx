@@ -42,17 +42,28 @@ export default function ResultsTable({ candidates }) {
     <table className="results">
       <thead>
         <tr>
-          {COLUMNS.map((col) => (
-            <th
-              key={col.key}
-              className={col.numeric ? 'num' : ''}
-              onClick={col.sortable === false ? undefined : () => toggleSort(col.key)}
-              role={col.sortable === false ? undefined : 'button'}
-            >
-              {col.label}
-              {sort.key === col.key ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}
-            </th>
-          ))}
+          {COLUMNS.map((col) => {
+            const sorted = sort.key === col.key;
+            return (
+              <th
+                key={col.key}
+                scope="col"
+                className={col.numeric ? 'num' : ''}
+                aria-sort={sorted ? (sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
+              >
+                {/* A real button, so Tab reaches it and Enter or Space sorts. A th with
+                    role="button" looked clickable but could not be focused at all. */}
+                {col.sortable === false ? (
+                  col.label
+                ) : (
+                  <button type="button" className="results-sort" onClick={() => toggleSort(col.key)}>
+                    {col.label}
+                    <span aria-hidden="true">{sorted ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</span>
+                  </button>
+                )}
+              </th>
+            );
+          })}
         </tr>
       </thead>
 
@@ -70,8 +81,26 @@ export default function ResultsTable({ candidates }) {
                     {/* The caret lives in the first real column rather than a column of its own:
                         an empty header cell has no intrinsic width and table layout hands it all
                         the slack, which pushes every header out of line with its data. */}
-                    {col.key === 'score' && <span className="toggle">{open ? '▾' : '▸'}</span>}
-                    {col.render(c)}
+                    {col.key === 'score' ? (
+                      // The row stays clickable for a mouse; this button is the same toggle for a
+                      // keyboard and tells a screen reader whether the detail is open.
+                      <button
+                        type="button"
+                        className="results-expand"
+                        aria-expanded={open}
+                        aria-controls={`detail-${c.id}`}
+                        aria-label={`${open ? 'Hide' : 'Show'} detail for ${c.symbol} ${STRATEGY_LABELS[c.kind] ?? c.kind} ${c.expiration}`}
+                        onClick={(event) => {
+                          event.stopPropagation(); // the row's own click would toggle it back
+                          setOpenId(open ? null : c.id);
+                        }}
+                      >
+                        <span className="toggle" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                        {col.render(c)}
+                      </button>
+                    ) : (
+                      col.render(c)
+                    )}
                     {col.key === 'expiration' && c.earningsBeforeExpiry && (
                       <span className="flag" title={`Earnings ${c.earningsBeforeExpiry} falls before this expiry`}>
                         E
@@ -82,7 +111,7 @@ export default function ResultsTable({ candidates }) {
               </tr>
 
               {open && (
-                <tr className="detail-row">
+                <tr className="detail-row" id={`detail-${c.id}`}>
                   <td colSpan={COLUMNS.length}>
                     <CandidateDetail candidate={c} />
                   </td>

@@ -106,6 +106,10 @@ export function createApp({ config, db = null }) {
   const provider = createProvider(config);
   const scanner = createScanner({ provider, cacheTtlMs: config.cacheTtlMs });
 
+  // userId → { running, done, total, current, startedAt } while that person's scan is running.
+  // In memory on purpose: it only means anything for the length of one request.
+  const scanProgress = new Map();
+
   // null without a key, which is how every "is the advisor on?" question is answered.
   const advisor = createAdvisor({
     apiKey: config.anthropicApiKey,
@@ -397,14 +401,36 @@ export function createApp({ config, db = null }) {
 
       if (req.body?.fresh) scanner.clearCache();
 
-      const result = await scanner.scan({
-        symbols,
-        filters,
-        weights,
-        limit: Number(req.body?.limit ?? 50),
-      });
+      // Progress is kept per person, so two people scanning at once each see their own count.
+      const userId = currentUserId(req);
+      const startedAt = new Date().toISOString();
+      scanProgress.set(userId, { running: true, done: 0, total: symbols.length, current: null, startedAt });
 
-      res.json(annotateEarnings(result, state.watchlist));
+      try {
+        const result = await scanner.scan({
+          symbols,
+          filters,
+          weights,
+          limit: Number(req.body?.limit ?? 50),
+          onProgress: ({ done, total, current }) =>
+            scanProgress.set(userId, { running: true, done, total, current, startedAt }),
+        });
+
+        res.json(annotateEarnings(result, state.watchlist));
+      } finally {
+        scanProgress.delete(userId);
+      }
+    }),
+  );
+
+  // How far the caller's running scan has got. A scan of a cold cache is ~60 provider requests
+  // and can take a minute; this is what lets the page say "IWM, 2 of 10" instead of a button
+  // that just says "Scanning…" for all of it. No scan running is an answer, not an error.
+  app.get(
+    '/api/scan/progress',
+    gate,
+    wrap(async (req, res) => {
+      res.json(scanProgress.get(currentUserId(req)) ?? { running: false });
     }),
   );
 

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from './api.js';
 import { hrefFor, pagesFor, useRoute } from './router.js';
+import { forgetLastScans, loadLastScan, saveLastScan } from './lastScan.js';
 import { applyTheme, readStoredTheme, storeTheme, watchSystemTheme } from './theme.js';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import ScreenerPage from './pages/ScreenerPage.jsx';
@@ -27,6 +28,10 @@ export default function App() {
   // Simulator and back instead of costing another round of provider requests.
   const [result, setResult] = useState(null);
   const [scanning, setScanning] = useState(false);
+  // { done, total, current, startedAt } while a scan runs — what the page shows instead of a
+  // button that just says "Scanning…" for a minute.
+  const [progress, setProgress] = useState(null);
+  const pollRef = useRef(null);
 
   const user = session?.user ?? null;
 
@@ -82,6 +87,7 @@ export default function App() {
   }, []);
 
   const signOut = async () => {
+    forgetLastScans(user?.id);
     try {
       await api.logout();
     } catch (e) {
@@ -134,14 +140,47 @@ export default function App() {
     }
   };
 
+  // Open on the last scan of this list rather than an empty page. Only when nothing is on screen:
+  // a scan you just ran is never swapped for an older one.
+  const activeListId = settings?.activeWatchlistId;
+  useEffect(() => {
+    if (!user || !settings || result || scanning) return;
+    const kept = loadLastScan(user.id, activeListId);
+    if (kept) setResult(kept);
+  }, [user?.id, activeListId, Boolean(settings)]);
+
+  const stopPolling = () => {
+    clearInterval(pollRef.current);
+    pollRef.current = null;
+  };
+  useEffect(() => stopPolling, []);
+
   const runScan = async ({ fresh = false } = {}) => {
     setScanning(true);
     setError(null);
+    setProgress({ done: 0, total: settings?.watchlist?.length ?? 0, current: null, startedAt: new Date().toISOString() });
+
+    // Ask the server how far it has got, once a second. A failed poll is ignored — the scan
+    // itself is what matters, and the next poll will usually answer.
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const p = await api.scanProgress();
+        if (p.running) setProgress(p);
+      } catch {
+        // keep the last answer on screen
+      }
+    }, 1000);
+
     try {
-      setResult(await api.scan({ fresh, limit: 60 }));
+      const scanned = await api.scan({ fresh, limit: 60 });
+      setResult(scanned);
+      saveLastScan(user?.id, activeListId, scanned);
     } catch (e) {
       setError(e.message);
     } finally {
+      stopPolling();
+      setProgress(null);
       setScanning(false);
     }
   };
@@ -249,7 +288,7 @@ export default function App() {
           settings={settings}
           onActivate={watchlists.activate}
           onFilters={saveFilters}
-          scan={{ result, scanning, run: runScan }}
+          scan={{ result, scanning, progress, run: runScan }}
         />
       )}
     </main>

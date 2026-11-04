@@ -1,4 +1,4 @@
-import { STRATEGY_LABELS } from '../format.js';
+import { COMPONENT_LABELS, STRATEGY_LABELS } from '../format.js';
 
 const NUMERIC = [
   { key: 'minDte', label: 'Min days to expiry', step: 1 },
@@ -73,7 +73,9 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
       <div className="grid">
         {Object.entries(weights).map(([key, value]) => (
           <label key={key} className="field">
-            <span>{key}</span>
+            {/* The same names the expanded row's "How it scored" table uses, so a weight here
+                and the component it scales there read as one thing. */}
+            <span>{COMPONENT_LABELS[key] ?? key}</span>
             <input
               type="number"
               step={0.05}

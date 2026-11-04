@@ -141,7 +141,9 @@ export default function SimulatorPage({ watchlist, params }) {
   // Position.
   const [quantity, setQuantity] = useState(num(params.qty) ?? 1);
   const [pricing, setPricing] = useState('conservative');
-  const [fill, setFill] = useState('');
+  // Seeded from the link when it came from a tracked position, so P&L is measured from what you
+  // were actually filled at rather than from today's quote.
+  const [fill, setFill] = useState(num(params.fill) > 0 ? String(num(params.fill)) : '');
 
   // What-if.
   const [daysForward, setDaysForward] = useState(0);
@@ -251,7 +253,13 @@ export default function SimulatorPage({ watchlist, params }) {
   useEffect(() => {
     if (!sim?.position) return;
     const p = sim.position;
-    const base = { kind, symbol, exp: expiration, qty: quantity > 1 ? quantity : undefined };
+    const base = {
+      kind,
+      symbol,
+      exp: expiration,
+      qty: quantity > 1 ? quantity : undefined,
+      fill: num(fill) > 0 ? num(fill) : undefined,
+    };
 
     if (by === 'delta') {
       replaceParams('simulator', { ...base, delta: targetDelta, width: p.width ?? undefined });
@@ -260,7 +268,7 @@ export default function SimulatorPage({ watchlist, params }) {
     } else {
       replaceParams('simulator', { ...base, strike: p.legs[0].strike });
     }
-  }, [sim, kind, symbol, expiration, by, targetDelta, width, quantity]);
+  }, [sim, kind, symbol, expiration, by, targetDelta, width, quantity, fill]);
 
   // --- controls ----------------------------------------------------------------------------
 

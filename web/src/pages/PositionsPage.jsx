@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { POSITION_TYPES, STATUSES, breachOf } from '@domain/positions.js';
+import { simulatorParamsFromPosition } from '@domain/simulate.js';
 
 import { api } from '../api.js';
 import { hrefFor } from '../router.js';
@@ -397,9 +398,7 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
               <button type="button" disabled={busy} onClick={() => setSettling(settling ? null : 'closed')}>
                 Settle
               </button>
-              <a className="link-button" href={hrefFor('simulator', { symbol: position.symbol })}>
-                Simulate
-              </a>
+              <SimulateLink position={position} />
             </>
           ) : (
             <button type="button" disabled={busy} onClick={onDelete} aria-label={`Delete ${position.symbol}`}>
@@ -524,5 +523,30 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
         </p>
       )}
     </form>
+  );
+}
+
+/**
+ * Opens this trade in the simulator — the same strikes, expiry, size and fill — so what you see
+ * there is the position you hold, not a default spread that happens to share its symbol. A type
+ * the simulator cannot draw still links to the symbol, but says so rather than implying it is
+ * your trade.
+ */
+function SimulateLink({ position }) {
+  const params = simulatorParamsFromPosition(position);
+  if (!params) return null;
+
+  const { exact, ...query } = params;
+  const label = POSITION_TYPES[position.type]?.label ?? position.type;
+
+  return (
+    <a
+      className="link-button"
+      href={hrefFor('simulator', query)}
+      title={exact ? undefined : `The simulator cannot draw a ${label.toLowerCase()} yet — this opens ${position.symbol} only`}
+      aria-label={exact ? `Simulate this ${position.symbol} position` : `Simulate ${position.symbol} (symbol only)`}
+    >
+      {exact ? 'Simulate' : 'Simulate symbol'}
+    </a>
   );
 }

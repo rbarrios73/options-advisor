@@ -194,3 +194,36 @@ test('an uncapped or small window is passed through untouched', () => {
   assert.equal(selectExpirations(few, { ...window, maxExpirations: 0 }, asOf).length, few.length);
   assert.equal(selectExpirations(few, { ...window, maxExpirations: 99 }, asOf).length, few.length);
 });
+
+test('a scan reports each symbol as it starts, then once at the end', async () => {
+  const heard = [];
+  await scannerFor().scan({
+    symbols: ['SPY', 'NOPE', 'NVDA'],
+    filters: DEFAULT_FILTERS,
+    weights: DEFAULT_WEIGHTS,
+    asOf,
+    onProgress: (p) => heard.push(p),
+  });
+
+  assert.deepEqual(heard, [
+    { done: 0, total: 3, current: 'SPY' },
+    { done: 1, total: 3, current: 'NOPE' },
+    { done: 2, total: 3, current: 'NVDA' },
+    { done: 3, total: 3, current: null },
+  ]);
+});
+
+test('a progress listener that throws does not cost the scan', async () => {
+  const result = await scannerFor().scan({
+    symbols: ['SPY'],
+    filters: DEFAULT_FILTERS,
+    weights: DEFAULT_WEIGHTS,
+    asOf,
+    onProgress: () => {
+      throw new Error('listener broke');
+    },
+  });
+
+  assert.equal(result.failures.length, 0);
+  assert.ok(result.candidates.length > 0);
+});

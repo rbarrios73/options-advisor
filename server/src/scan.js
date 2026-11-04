@@ -100,12 +100,33 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
       return { quote, chain };
     },
 
-    async scan({ symbols, filters, weights, limit = 50, asOf = new Date().toISOString().slice(0, 10) }) {
+    /**
+     * `onProgress`, when given, hears about each symbol as it starts and once more at the end,
+     * so a caller can tell someone watching which name is being fetched and how many are left.
+     * It is told, never asked: a listener that throws must not cost the scan.
+     */
+    async scan({
+      symbols,
+      filters,
+      weights,
+      limit = 50,
+      asOf = new Date().toISOString().slice(0, 10),
+      onProgress,
+    }) {
       const all = [];
       const perSymbol = [];
       const failures = [];
 
-      for (const symbol of symbols) {
+      const report = (done, current) => {
+        try {
+          onProgress?.({ done, total: symbols.length, current });
+        } catch {
+          // a progress listener is a courtesy; the scan carries on regardless
+        }
+      };
+
+      for (const [index, symbol] of symbols.entries()) {
+        report(index, symbol);
         try {
           const { quote, expirationsScanned, candidates } = await scanSymbol(symbol, filters, asOf);
           const scored = candidates.map((c) => scoreCandidate(c, weights));
@@ -125,6 +146,8 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
           failures.push({ symbol, error: error.message });
         }
       }
+
+      report(symbols.length, null);
 
       return {
         asOf,

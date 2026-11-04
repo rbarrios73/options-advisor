@@ -125,6 +125,7 @@ test('every data route needs a session; health and identity do not', async (t) =
   for (const [path, method] of [
     ['/api/settings', 'GET'],
     ['/api/scan', 'POST'],
+    ['/api/scan/progress', 'GET'],
     ['/api/watchlist', 'PUT'],
     ['/api/filters', 'PUT'],
     ['/api/expirations?symbol=SPY', 'GET'],
@@ -477,6 +478,25 @@ test('a scan uses the signed-in account’s own watchlist', async (t) => {
   const scan = await call('/api/scan', { method: 'POST', body: { limit: 5 } });
   assert.equal(scan.status, 200);
   assert.deepEqual(scan.body.symbols.map((x) => x.symbol), ['SPY']);
+});
+
+test('scan progress is an answer when nothing is running, and is cleared when a scan ends', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const idle = await call('/api/scan/progress');
+  assert.equal(idle.status, 200);
+  assert.deepEqual(idle.body, { running: false });
+
+  await call('/api/watchlist', { method: 'PUT', body: { watchlist: [{ symbol: 'SPY' }] } });
+  const scan = await call('/api/scan', { method: 'POST', body: { limit: 5 } });
+  assert.equal(scan.status, 200);
+
+  const after = await call('/api/scan/progress');
+  assert.deepEqual(after.body, { running: false }, 'a finished scan leaves nothing behind');
 });
 
 // --- single-user mode still works ---------------------------------------------------------------

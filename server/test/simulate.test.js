@@ -26,6 +26,7 @@ import {
   positionGreeks,
   summarize,
   trackerRowFrom,
+  simulatorParamsFromPosition,
 } from '../src/domain/simulate.js';
 import { POSITION_TYPES, cleanPosition } from '../src/domain/positions.js';
 
@@ -819,4 +820,69 @@ test('every strategy the simulator offers maps to a type the tracker has', () =>
 test('a row with no symbol is refused rather than stored half-formed', () => {
   assert.equal(trackerRowFrom(savedSpread(), {}), null);
   assert.equal(trackerRowFrom({ ...savedSpread(), kind: 'iron_condor' }, { symbol: 'SPY' }), null);
+});
+
+// --- the way back: a tracked position → simulator link ------------------------------------------
+
+test('a tracked spread rebuilds as the same spread, with the fill per share', () => {
+  const params = simulatorParamsFromPosition({
+    symbol: 'spy',
+    type: 'VPCS',
+    contracts: 2,
+    shortStrike: 540,
+    longStrike: 535,
+    expiration: '2026-10-23',
+    premium: 210, // $1.05 a share × 100 × 2
+  });
+
+  assert.deepEqual(params, {
+    symbol: 'SPY',
+    kind: 'put_credit_spread',
+    exp: '2026-10-23',
+    short: 540,
+    long: 535,
+    qty: 2,
+    fill: 1.05,
+    exact: true,
+  });
+});
+
+test('a long option rebuilds by its strike, and a debit fill is written unsigned', () => {
+  const params = simulatorParamsFromPosition({
+    symbol: 'NVDA',
+    type: 'LC',
+    contracts: 1,
+    shortStrike: 150,
+    longStrike: null,
+    expiration: '2026-11-20',
+    premium: -425,
+  });
+
+  assert.equal(params.kind, 'long_call');
+  assert.equal(params.strike, 150);
+  assert.equal(params.short, undefined);
+  assert.equal(params.fill, 4.25);
+  assert.equal(params.exact, true);
+});
+
+test('round trip: simulator → tracker row → simulator gives back the same legs', () => {
+  const row = trackerRowFrom(savedSpread(), { symbol: 'SPY', fill: 1.1 });
+  const params = simulatorParamsFromPosition(row);
+
+  assert.equal(params.kind, savedSpread().kind);
+  assert.equal(params.short, savedSpread().short.strike);
+  assert.equal(params.long, savedSpread().long.strike);
+  assert.equal(params.exp, savedSpread().expiration);
+  assert.equal(params.fill, 1.1);
+});
+
+test('a type the simulator cannot draw links to the symbol only, and says it is not exact', () => {
+  for (const type of ['IC', 'W', 'CC', 'CSP', 'PMCC']) {
+    assert.deepEqual(
+      simulatorParamsFromPosition({ symbol: 'XLF', type, shortStrike: 40, expiration: '2026-10-23', premium: 50 }),
+      { symbol: 'XLF', exact: false },
+      type,
+    );
+  }
+  assert.equal(simulatorParamsFromPosition({}), null);
 });
