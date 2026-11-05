@@ -27,6 +27,7 @@ import { DEFAULT_RANGE, intervalFor, isRange, startDateFor } from './domain/hist
 import { cleanWatchlist } from './domain/watchlist.js';
 import { DIGEST_LIMIT } from './domain/advice.js';
 import { cleanTheme } from './domain/theme.js';
+import { pickForecastExpiries, realizedVol } from './domain/forecast.js';
 import {
   POSITION_TYPES,
   breachOf,
@@ -952,6 +953,68 @@ app.get(
     const bars = await scanner.history(symbol, { start, end: asOf, interval });
 
     res.json({ symbol, range, interval, start, end: asOf, bars });
+  }),
+);
+
+// The forecast panel's inputs: implied vol at a handful of expiries, and the price's own realised
+// vol. Only the inputs — the cone and the odds for a typed price are worked out in the browser
+// from the same domain code, so typing a level costs no request.
+//
+// Every fetch goes through the scanner's cache. The year of daily bars is the same request the
+// Ticker page's 1Y range makes, and the chains are the ones a scan or the simulator would fetch,
+// so opening a ticker you have already scanned is close to free against the rate limit.
+app.get(
+  '/api/forecast',
+  gate,
+  wrap(async (req, res) => {
+    const symbol = symbolParam(req, res);
+    if (!symbol) return;
+
+    const asOf = today();
+    const [quote, expirations] = await Promise.all([scanner.quote(symbol), scanner.expirations(symbol)]);
+    const spot = quote.last;
+
+    const listed = expirations.map((date) => ({ date, dte: daysBetween(asOf, date) }));
+    const picked = pickForecastExpiries(listed);
+
+    // One at a time, like the scan: four chains in parallel is how a shared sandbox token hits
+    // its limit. A failed expiry is left out rather than failing the panel.
+    const points = [];
+    for (const e of picked) {
+      try {
+        const { chain } = await scanner.chain(symbol, e.date);
+        const iv = atmImpliedVol(chain.options ?? [], spot);
+        if (iv > 0) points.push({ ...e, iv });
+      } catch {
+        // skipped; the remaining expiries still make a cone
+      }
+    }
+
+    let bars = [];
+    try {
+      bars = await scanner.history(symbol, {
+        start: startDateFor('1Y', asOf),
+        end: asOf,
+        interval: intervalFor('1Y'),
+      });
+    } catch {
+      // no history: the cone still draws from implied vol; realised vol reads as unavailable
+    }
+
+    res.json({
+      symbol,
+      asOf,
+      spot,
+      riskFree: config.riskFreeRate ?? 0.04,
+      expiries: points,
+      realized: {
+        d20: realizedVol(bars, 20),
+        d60: realizedVol(bars, 60),
+        d252: realizedVol(bars, 250),
+      },
+      // The last three months of closes, so the chart can show where the cone starts from.
+      recent: bars.slice(-63).map((b) => ({ date: b.date, close: b.close })),
+    });
   }),
 );
 

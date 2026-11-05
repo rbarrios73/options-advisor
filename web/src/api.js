@@ -92,6 +92,9 @@ export const api = {
       `/api/chain?symbol=${encodeURIComponent(symbol)}&expiration=${encodeURIComponent(expiration)}`,
     ).then(json),
 
+  /** Implied vol at a few expiries and realised vol, for the Ticker page's expected range. */
+  forecast: (symbol) => fetch(`/api/forecast?symbol=${encodeURIComponent(symbol)}`).then(json),
+
   /** How far your running scan has got: { running, done, total, current, startedAt }. */
   scanProgress: () => fetch('/api/scan/progress').then(json),
 

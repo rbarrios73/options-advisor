@@ -126,6 +126,7 @@ test('every data route needs a session; health and identity do not', async (t) =
     ['/api/settings', 'GET'],
     ['/api/scan', 'POST'],
     ['/api/scan/progress', 'GET'],
+    ['/api/forecast?symbol=SPY', 'GET'],
     ['/api/watchlist', 'PUT'],
     ['/api/filters', 'PUT'],
     ['/api/expirations?symbol=SPY', 'GET'],
@@ -1674,4 +1675,43 @@ test('the last bar agrees with the quote, so the chart and the header cannot dis
   // the generator walked forwards from the start of the window.
   const year = (await call('/api/history?symbol=SPY&range=1Y')).body;
   assert.deepEqual(year.bars.at(-1), today);
+});
+
+test('the forecast route gives implied vol at a few expiries and the price’s realised vol', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const r = await call('/api/forecast?symbol=SPY');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.symbol, 'SPY');
+  assert.ok(r.body.spot > 0);
+
+  const { expiries } = r.body;
+  assert.ok(expiries.length >= 1 && expiries.length <= 4, `1–4 expiries, got ${expiries.length}`);
+  for (const e of expiries) {
+    assert.ok(e.iv > 0 && e.iv < 2, `a usable implied vol for ${e.date}`);
+    assert.ok(e.dte >= 1 && e.dte <= 120);
+  }
+  assert.deepEqual(
+    expiries.map((e) => e.dte),
+    [...expiries.map((e) => e.dte)].sort((a, b) => a - b),
+    'in date order',
+  );
+
+  assert.ok(r.body.realized.d20 > 0, 'a year of mock closes is enough for 20-day realised vol');
+  assert.ok(r.body.recent.length > 0 && r.body.recent.length <= 63);
+});
+
+test('the forecast route refuses a junk symbol rather than spending requests on it', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const r = await call('/api/forecast?symbol=' + encodeURIComponent('<script>'));
+  assert.equal(r.status, 400);
 });

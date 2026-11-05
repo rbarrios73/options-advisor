@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { hrefFor, replaceParams } from '../router.js';
 import { compact, price as fmtPrice } from '../format.js';
 import PriceChart from '../components/PriceChart.jsx';
+import ForecastPanel from '../components/ForecastPanel.jsx';
 
 /**
  * Look up one symbol: what it costs now, and what it has done over a period.
@@ -244,6 +245,10 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
           )}
         </aside>
       </div>
+
+      {/* Its own request and its own failure: a symbol with no listed options still has a price
+          chart above, and the panel says why it has nothing to draw. */}
+      {quote && <ForecastPanel key={symbol} symbol={symbol} />}
     </div>
   );
 }
