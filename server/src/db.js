@@ -175,6 +175,8 @@ export async function migrate(db) {
       created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  // Added after the table first shipped, so it arrives by ALTER on databases that already have it.
+  await db.query(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS close_cost NUMERIC`);
   await db.query(`CREATE INDEX IF NOT EXISTS positions_user ON positions (user_id, status, expiration)`);
   // The goal totals read by date, and a month of rows is a small scan, but this is the one query
   // that runs on every page load.

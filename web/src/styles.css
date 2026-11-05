@@ -41,6 +41,7 @@
      the pair a red-green colour-blind reader cannot split. */
   --series-1: #3987e5;
   --series-2: #d95926;
+  --series-3: #199e70;
   --profit: #3987e5;
   --loss: #e66767;
 
@@ -86,6 +87,7 @@
 
   --series-1: #2a78d6;
   --series-2: #eb6834;
+  --series-3: #1baf7a;
   --profit: #2a78d6;
   --loss: #e34948;
 
@@ -129,6 +131,7 @@
 
     --series-1: #2a78d6;
     --series-2: #eb6834;
+    --series-3: #1baf7a;
     --profit: #2a78d6;
     --loss: #e34948;
 
@@ -1137,3 +1140,63 @@ table.forecast-table .num { text-align: right; font-variant-numeric: tabular-num
 .odds-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .odds-nudges { display: flex; gap: 6px; flex-wrap: wrap; }
 .forecast-sub .greeks { border-top: none; padding-top: 0; margin-top: 8px; }
+
+
+/* --- Positions: trading results for a date range ---------------------------------------------- */
+/* Identity by series colour (new = 1, rolls = 3, closed = 2), always beside a word or a count, so
+   the colour is never the only thing saying which is which. Money carries no colour at all: a
+   cost reads as a cost from its minus sign. */
+.results-report { margin-top: 16px; }
+.report-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; }
+.report-head h2 { margin-bottom: 4px; }
+.report-range { margin: 0; }
+.report-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.report-filter .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+
+.report-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
+.report-tiles-secondary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+.report-tile { background: var(--sunken); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 0; }
+.report-tile dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.report-tile dd { margin: 4px 0 0; display: flex; flex-direction: column; gap: 2px; }
+.report-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.report-tile.strong { border-color: var(--accent); }
+.report-tile.strong .report-value { font-size: 22px; }
+.report-hint { color: var(--muted); font-size: 11px; }
+@media (max-width: 900px) { .report-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .report-tiles-secondary { grid-template-columns: minmax(0, 1fr); } }
+
+.report-groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 1100px) { .report-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .report-groups { grid-template-columns: minmax(0, 1fr); } }
+.report-group { border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.report-group h3 { margin: 0; display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.report-group .facts { margin-top: 8px; }
+.report-count { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.report-symbols { margin: 8px 0 0; color: var(--text-secondary); letter-spacing: 0.02em; }
+.report-group.kind-new { border-top-color: var(--series-1); }
+.report-group.kind-roll { border-top-color: var(--series-3); }
+.report-group.kind-close { border-top-color: var(--series-2); }
+
+.mix-bar { display: flex; gap: 2px; height: 28px; margin: 12px 0 8px; }
+.mix-part { display: flex; align-items: center; padding-left: 8px; border-radius: 4px; color: #fff; font-size: 12px; font-weight: 600; min-width: 4px; }
+.mix-part.kind-new, .legend-band.kind-new { background: var(--series-1); }
+.mix-part.kind-roll, .legend-band.kind-roll { background: var(--series-3); }
+.mix-part.kind-close, .legend-band.kind-close { background: var(--series-2); }
+.mix-legend { margin: 0; }
+
+table.report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.report-table caption { caption-side: bottom; text-align: left; padding-top: 8px; }
+table.report-table th, table.report-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; text-align: left; }
+table.report-table thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
+table.report-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.event-tag { display: inline-flex; align-items: center; gap: 6px; }
+.event-tag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.event-tag.kind-new::before { background: var(--series-1); }
+.event-tag.kind-roll::before { background: var(--series-3); }
+.event-tag.kind-close::before { background: var(--series-2); }
+.report-notes { margin: 12px 0 0; padding-left: 18px; }
+.report-notes li { margin: 2px 0; }
+.settle-kept { align-self: center; }
+/* Label ink per segment, from measured contrast: white reads on the blue (4.4:1) but not on the
+   orange or aqua (2.8–3.2:1), where near-black clears 4.7:1 in both themes. */
+.mix-part.kind-roll, .mix-part.kind-close { color: #111418; }

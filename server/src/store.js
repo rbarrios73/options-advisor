@@ -528,6 +528,7 @@ export function createDbStore(db) {
                 to_char(trade_date, 'YYYY-MM-DD') AS "tradeDate",
                 premium::float8          AS premium,
                 assignment_loss::float8  AS "assignmentLoss",
+                close_cost::float8       AS "closeCost",
                 to_char(closed_at, 'YYYY-MM-DD') AS "closedAt",
                 to_char(rolled_to_expiration, 'YYYY-MM-DD') AS "rolledToExpiration",
                 rolled_to_short_strike::float8 AS "rolledToShortStrike",
@@ -546,8 +547,8 @@ export function createDbStore(db) {
       await db.query(
         `INSERT INTO positions (id, user_id, symbol, type, status, account, contracts, short_strike,
                                 long_strike, expiration, trade_date, premium, assignment_loss,
-                                closed_at, rolled_to_expiration, rolled_to_short_strike, note)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+                                closed_at, rolled_to_expiration, rolled_to_short_strike, note, close_cost)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [id, userId, ...columnsOf(clean)],
       );
 
@@ -572,7 +573,7 @@ export function createDbStore(db) {
         `UPDATE positions SET symbol=$3, type=$4, status=$5, account=$6, contracts=$7,
                 short_strike=$8, long_strike=$9, expiration=$10, trade_date=$11, premium=$12,
                 assignment_loss=$13, closed_at=$14, rolled_to_expiration=$15,
-                rolled_to_short_strike=$16, note=$17
+                rolled_to_short_strike=$16, note=$17, close_cost=$18
          WHERE id=$1 AND user_id=$2`,
         [id, userId, ...columnsOf(clean)],
       );
@@ -681,7 +682,7 @@ function columnsOf(p) {
   return [
     p.symbol, p.type, p.status, p.account, p.contracts,
     p.shortStrike, p.longStrike, p.expiration, p.tradeDate, p.premium,
-    p.assignmentLoss, p.closedAt, p.rolledToExpiration, p.rolledToShortStrike, p.note,
+    p.assignmentLoss, p.closedAt, p.rolledToExpiration, p.rolledToShortStrike, p.note, p.closeCost,
   ];
 }
 

@@ -1405,6 +1405,27 @@ test('settling a position banks its premium against the goals', async (t) => {
   assert.equal(after.today.goal, 450, 'the default daily target');
 });
 
+test('a cost to close is stored apart from the credit, and the goals count what was kept', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const { body: made } = await call('/api/positions', { method: 'POST', body: POSITION });
+  const today = new Date().toISOString().slice(0, 10);
+  const patched = await call(`/api/positions/${made.id}`, {
+    method: 'PATCH',
+    body: { status: 'closed', closedAt: today, premium: 138, closeCost: 23.06 },
+  });
+  assert.equal(patched.status, 200);
+
+  const { body } = await call('/api/positions');
+  const stored = body.positions.find((p) => p.id === made.id);
+  assert.equal(stored.premium, 138, 'the opening credit is kept as it was');
+  assert.equal(stored.closeCost, 23.06, 'and the buyback beside it, through the database and back');
+  assert.equal(body.totals.today.net, 114.94);
+});
+
 test('goals are saved per account and drive the progress figures', async (t) => {
   const s = await startServer();
   t.after(s.close);

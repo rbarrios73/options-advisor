@@ -109,6 +109,11 @@ export function cleanPosition(raw) {
     premium: n(raw?.premium),
     assignmentLoss: n(raw?.assignmentLoss),
 
+    // What it cost to buy the position back, as a positive number — kept apart from the opening
+    // credit so a period report can say how much was paid to close. Null on rows settled before
+    // this existed, whose `premium` was already typed as the net amount kept.
+    closeCost: n(raw?.closeCost) === null ? null : Math.abs(n(raw.closeCost)),
+
     // When the money was realised. A premium with no date cannot count towards a daily goal, so
     // closing a position asks for this rather than assuming today.
     closedAt: ISO_DATE.test(String(raw?.closedAt ?? '')) ? raw.closedAt : null,
@@ -187,7 +192,8 @@ export function premiumTotals(positions, { today, goals = DEFAULT_GOALS } = {}) 
 
   const period = (from) => {
     const rows = inRange(from);
-    const premium = sum(rows, 'premium');
+    // Kept, not opened: the credit less whatever it cost to buy back.
+    const premium = rows.reduce((total, p) => total + keptOf(p), 0);
     const loss = sum(rows, 'assignmentLoss');
     return { premium: round2(premium), assignmentLoss: round2(loss), net: round2(premium - loss), count: rows.length };
   };
@@ -208,6 +214,11 @@ export function premiumTotals(positions, { today, goals = DEFAULT_GOALS } = {}) 
     openPremium: round2(sum(open, 'premium')),
     openCount: open.length,
   };
+}
+
+/** What a settled position actually banked: the opening credit less the cost to close it. */
+export function keptOf(position) {
+  return (position.premium ?? 0) - (position.closeCost ?? 0);
 }
 
 /** Monday, because a trading week does. */

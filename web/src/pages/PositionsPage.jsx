@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { POSITION_TYPES, STATUSES, breachOf } from '@domain/positions.js';
 import { simulatorParamsFromPosition } from '@domain/simulate.js';
+import PeriodReport from '../components/PeriodReport.jsx';
 
 import { api } from '../api.js';
 import { hrefFor } from '../router.js';
@@ -73,6 +74,8 @@ export default function PositionsPage() {
       </div>
 
       <Goals totals={data.totals} goals={data.goals} onSave={(goals) => run(() => api.saveGoals(goals))} busy={busy} />
+
+      <PeriodReport positions={data.positions} today={data.asOf} />
 
       <AddPosition onAdd={(position) => run(() => api.addPosition(position))} busy={busy} />
 
@@ -390,7 +393,15 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         </td>
         <td className="num">{price(position.spot)}</td>
         <td className="small muted nowrap">{earnings ? shortDate(earnings) : '—'}</td>
-        <td className="num">{position.premium == null ? '—' : signed(position.premium)}</td>
+        <td className="num">
+          {position.premium == null ? '—' : signed(position.premium)}
+          {position.closeCost > 0 && (
+            <span className="muted small" title="Paid to buy it back">
+              {' '}
+              −{money(position.closeCost)} to close
+            </span>
+          )}
+        </td>
 
         <td className="row-actions">
           {position.status === 'open' ? (
@@ -437,7 +448,13 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
   const [status, setStatus] = useState('closed');
   const [closedAt, setClosedAt] = useState(TODAY());
   const [premium, setPremium] = useState(position.premium ?? '');
+  const [closeCost, setCloseCost] = useState('');
   const [assignmentLoss, setLoss] = useState('');
+
+  // Closing and rolling both buy the old leg back; that cost is kept beside the credit rather than
+  // netted into it, so the period report can say what was paid to close. Assignment has no buyback.
+  const buysBack = status === 'closed' || status === 'rolled';
+  const kept = Number(premium || 0) - (buysBack ? Number(closeCost || 0) : 0);
   const [rolledToExpiration, setRollExp] = useState('');
   const [rolledToShortStrike, setRollStrike] = useState('');
 
@@ -450,6 +467,7 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
           status,
           closedAt,
           premium: premium === '' ? null : Number(premium),
+          closeCost: buysBack && closeCost !== '' ? Math.abs(Number(closeCost)) : null,
           assignmentLoss: status === 'assigned' && assignmentLoss !== '' ? Number(assignmentLoss) : null,
           rolledToExpiration: status === 'rolled' ? rolledToExpiration : null,
           rolledToShortStrike: status === 'rolled' && rolledToShortStrike !== '' ? Number(rolledToShortStrike) : null,
@@ -477,9 +495,29 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
       </label>
 
       <label className="control">
-        <span>Premium kept $</span>
+        <span>{buysBack ? 'Opening credit $' : 'Premium kept $'}</span>
         <input type="number" step="1" className="w-qty" value={premium} onChange={(e) => setPremium(e.target.value)} />
       </label>
+
+      {buysBack && (
+        <label className="control">
+          <span>Cost to close $</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            className="w-qty"
+            value={closeCost}
+            placeholder="0"
+            onChange={(e) => setCloseCost(e.target.value)}
+            title="What you paid to buy it back. Leave blank if it expired worthless."
+          />
+        </label>
+      )}
+
+      {buysBack && closeCost !== '' && (
+        <span className="muted small settle-kept">Kept {signed(kept)}</span>
+      )}
 
       {status === 'assigned' && (
         <label className="control">
@@ -518,8 +556,8 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
 
       {status === 'rolled' && (
         <p className="muted small">
-          Recording a roll settles this row and banks its premium. Add the new position separately —
-          it has its own fill.
+          Recording a roll settles this row. Add the new leg separately, with this date as its Opened
+          date — the results report pairs the two into one roll, net of the cost to close.
         </p>
       )}
     </form>
