@@ -1,7 +1,7 @@
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
 /**
- * The front door: what Option Advisor is, before anyone is asked for a password.
+ * The front door: what Trader Mice is, before anyone is asked for a password.
  *
  * Shown only to someone signed out who arrived at the bare address. A shared link to a page
  * (#/simulator?…) skips it and goes straight to sign-in, so the link still lands where it points.
@@ -16,8 +16,8 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
     <div className="landing">
       <header className="landing-top">
         <span className="landing-brand">
-          <img src="/logo-mark.png" alt="" width="32" height="32" />
-          Option Advisor
+          <img src="/logo-mark.png" alt="" width="46" height="32" />
+          Trader Mice
         </span>
         <nav className="landing-actions" aria-label="Account">
           <button type="button" className="link-button" onClick={() => onStart('signin')}>
@@ -39,7 +39,7 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
               Defined-risk option trades, ranked every day — with every number shown.
             </h1>
             <p className="landing-lede">
-              Option Advisor scans your watchlist&rsquo;s option chains, ranks credit spreads and
+              Trader Mice scans your watchlist&rsquo;s option chains, ranks credit spreads and
               long options, and shows exactly how each score was built. Then it lets you test the
               trade before you place it, and tracks it after.
             </p>
@@ -145,7 +145,7 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
 
       <footer className="landing-foot">
         <p className="muted small">
-          Option Advisor is an analysis tool, not investment advice. It sees one snapshot of an
+          Trader Mice is an analysis tool, not investment advice. It sees one snapshot of an
           option chain and knows nothing about your account, your other positions or your taxes.
           Probabilities come from implied volatility, and real markets make large moves more often
           than the model assumes. Market data may be delayed.

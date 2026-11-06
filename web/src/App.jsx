@@ -233,7 +233,7 @@ export default function App() {
           onBack={() => {
             window.location.hash = view ? '' : hrefFor('screener');
           }}
-          backLabel={view ? '← About Option Advisor' : '← Back to the Screener'}
+          backLabel={view ? '← About Trader Mice' : '← Back to the Screener'}
           onSignedIn={signedIn}
           signupOpen={session.signupOpen}
           theme={theme}
@@ -255,7 +255,7 @@ export default function App() {
           {/* The wordmark already says the name on the sign-in screen; here the monogram sits
               beside the heading, so alt="" keeps a screen reader from reading it twice. */}
           <img src="/logo-mark.png" alt="" width="58" height="40" />
-          <h1>Option Advisor</h1>
+          <h1>Trader Mice</h1>
         </a>
 
         <nav className="tabs" aria-label="Pages">
