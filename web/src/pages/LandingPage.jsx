@@ -11,7 +11,7 @@ import ThemeToggle from '../components/ThemeToggle.jsx';
  * conservative prices and every number shown. The not-advice line is said once, plainly, at the
  * foot, where the rest of the app says it too.
  */
-export default function LandingPage({ signupOpen, onStart, theme, onTheme }) {
+export default function LandingPage({ signupOpen, onStart, onExplore, theme, onTheme }) {
   return (
     <div className="landing">
       <header className="landing-top">
@@ -47,12 +47,18 @@ export default function LandingPage({ signupOpen, onStart, theme, onTheme }) {
               <button type="button" className="primary" onClick={() => onStart(signupOpen ? 'signup' : 'signin')}>
                 {signupOpen ? 'Create a free account' : 'Sign in'}
               </button>
-              {signupOpen && (
-                <button type="button" className="link-button" onClick={() => onStart('signin')}>
-                  I already have an account
+              {onExplore && (
+                <button type="button" className="link-button" onClick={onExplore}>
+                  Try the screener — no account needed
                 </button>
               )}
             </div>
+            {onExplore && (
+              <p className="muted small landing-guest-note">
+                The Screener, Ticker, Watchlist and Dividends pages are open to everyone. Positions and
+                the Simulator need a free account.
+              </p>
+            )}
           </div>
 
           <HeroArt />

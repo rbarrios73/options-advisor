@@ -18,7 +18,7 @@ import {
 import { migrate } from './db.js';
 import { UserError, createUserStore, passwordProblem } from './users.js';
 import { createProvider } from './providers/index.js';
-import { createDbStore, createFileStore } from './store.js';
+import { createDbStore, createFileStore, guestState } from './store.js';
 import { createScanner } from './scan.js';
 import { DEFAULT_FILTERS, STRATEGIES, atmImpliedVol } from './domain/strategies.js';
 import { DEFAULT_WEIGHTS } from './domain/score.js';
@@ -89,6 +89,43 @@ export function createApp({ config, db = null }) {
   // In single-user mode every request is "the one user"; the stores ignore the id.
   const currentUserId = (req) => req.user?.id ?? 'local';
   const gate = accounts ? requireUser : (_req, _res, next) => next();
+
+  // --- guests ----------------------------------------------------------------------------------
+  //
+  // With accounts on, someone signed out can still use the read-only pages: the Screener (on the
+  // starter watchlist and default filters), Ticker lookup with its expected range, the Watchlist
+  // and Dividends. Nothing they do is saved, and nothing anyone else saved is visible to them.
+  // Positions, the Simulator, every write and the AI features still need an account.
+  //
+  // The cost a guest can run up is market-data requests on a shared, rate-limited token, so the
+  // guest routes take only the starter list (never a caller's symbols), never bypass the cache,
+  // and are capped per address per hour. A signed-in person is never limited by these.
+  const isGuest = (req) => accounts && !req.user;
+  const readState = (req) => (isGuest(req) ? guestState() : store.read(currentUserId(req)));
+
+  const guestHits = new Map(); // `${bucket}:${ip}` → timestamps within the last hour
+  const guestLimit = (bucket, perHour) => (req, res, next) => {
+    if (!isGuest(req)) return next();
+    const key = `${bucket}:${req.ip}`;
+    const now = Date.now();
+    const recent = (guestHits.get(key) ?? []).filter((t) => now - t < 3_600_000);
+    if (recent.length >= perHour) {
+      return res.status(429).json({
+        error: `That is the hourly limit for visitors without an account. Sign in for unlimited ${bucket === 'scan' ? 'scans' : 'lookups'}.`,
+      });
+    }
+    recent.push(now);
+    guestHits.set(key, recent);
+    // Swept now and then, so a stream of one-off visitors cannot grow the map for ever.
+    if (guestHits.size > 5000) for (const [k, v] of guestHits) if (!v.some((t) => now - t < 3_600_000)) guestHits.delete(k);
+    next();
+  };
+  const GUEST_SCANS_PER_HOUR = config.guestScansPerHour ?? 6;
+  const GUEST_LOOKUPS_PER_HOUR = config.guestLookupsPerHour ?? 60;
+
+  // Two guests pressing Scan at once get the one scan: they ask for the same list with the same
+  // filters, so a second run would spend the requests twice for the same answer.
+  let guestScan = null;
 
   // Self-registration needs SIGNUP_OPEN *and* accounts: without a database there is nothing to
   // register into, and the whole app sits behind one shared password instead.
@@ -301,15 +338,17 @@ export function createApp({ config, db = null }) {
 
   app.get(
     '/api/settings',
-    gate,
     wrap(async (req, res) => {
-      const state = await store.read(currentUserId(req));
+      const guest = isGuest(req);
+      const state = await readState(req);
       res.json({
         ...state,
         defaults: { filters: DEFAULT_FILTERS, weights: DEFAULT_WEIGHTS },
         provider: provider.name,
-        advisor: advisor ? { model: advisor.model, perHour: config.advisorPerHour } : null,
+        // The advisor costs money per question, so it is an account feature.
+        advisor: advisor && !guest ? { model: advisor.model, perHour: config.advisorPerHour } : null,
         user: req.user ?? null,
+        guest,
       });
     }),
   );
@@ -389,37 +428,49 @@ export function createApp({ config, db = null }) {
 
   app.post(
     '/api/scan',
-    gate,
+    guestLimit('scan', GUEST_SCANS_PER_HOUR),
     wrap(async (req, res) => {
-      const state = await store.read(currentUserId(req));
+      const guest = isGuest(req);
+      const state = await readState(req);
 
-      const symbols = req.body?.symbols?.length
-        ? req.body.symbols.map((s) => String(s).toUpperCase())
-        : state.watchlist.map((w) => w.symbol);
+      // A guest scans the starter list on the default filters, whatever the request says: the
+      // symbols and the expiry window are what decide how many provider requests a scan spends.
+      const symbols =
+        !guest && req.body?.symbols?.length
+          ? req.body.symbols.map((s) => String(s).toUpperCase())
+          : state.watchlist.map((w) => w.symbol);
 
-      const filters = { ...state.filters, ...(req.body?.filters ?? {}) };
-      const weights = { ...state.weights, ...(req.body?.weights ?? {}) };
+      const filters = guest ? state.filters : { ...state.filters, ...(req.body?.filters ?? {}) };
+      const weights = guest ? state.weights : { ...state.weights, ...(req.body?.weights ?? {}) };
 
-      if (req.body?.fresh) scanner.clearCache();
+      if (req.body?.fresh && !guest) scanner.clearCache();
+
+      if (guest && guestScan) {
+        res.json(annotateEarnings(await guestScan, state.watchlist));
+        return;
+      }
 
       // Progress is kept per person, so two people scanning at once each see their own count.
-      const userId = currentUserId(req);
+      // Guests share one key, because they share the one scan.
+      const userId = guest ? 'guest' : currentUserId(req);
       const startedAt = new Date().toISOString();
       scanProgress.set(userId, { running: true, done: 0, total: symbols.length, current: null, startedAt });
 
-      try {
-        const result = await scanner.scan({
-          symbols,
-          filters,
-          weights,
-          limit: Number(req.body?.limit ?? 50),
-          onProgress: ({ done, total, current }) =>
-            scanProgress.set(userId, { running: true, done, total, current, startedAt }),
-        });
+      const running = scanner.scan({
+        symbols,
+        filters,
+        weights,
+        limit: guest ? 60 : Number(req.body?.limit ?? 50),
+        onProgress: ({ done, total, current }) =>
+          scanProgress.set(userId, { running: true, done, total, current, startedAt }),
+      });
+      if (guest) guestScan = running;
 
-        res.json(annotateEarnings(result, state.watchlist));
+      try {
+        res.json(annotateEarnings(await running, state.watchlist));
       } finally {
         scanProgress.delete(userId);
+        if (guest) guestScan = null;
       }
     }),
   );
@@ -429,9 +480,8 @@ export function createApp({ config, db = null }) {
   // that just says "Scanning…" for all of it. No scan running is an answer, not an error.
   app.get(
     '/api/scan/progress',
-    gate,
     wrap(async (req, res) => {
-      res.json(scanProgress.get(currentUserId(req)) ?? { running: false });
+      res.json(scanProgress.get(isGuest(req) ? 'guest' : currentUserId(req)) ?? { running: false });
     }),
   );
 
@@ -501,8 +551,11 @@ export function createApp({ config, db = null }) {
    * Fails soft per symbol, like the tracker does. A provider that cannot price one name should
    * cost that row its price, not empty the table.
    */
-  async function dividendRows(userId, { months, asOf }) {
-    const [holdings, state] = await Promise.all([store.listHoldings(userId), store.read(userId)]);
+  async function dividendRows(userId, { months, asOf, guest = false }) {
+    // A guest holds nothing, and screens the starter list.
+    const [holdings, state] = guest
+      ? [[], guestState()]
+      : await Promise.all([store.listHoldings(userId), store.read(userId)]);
 
     const bySymbol = new Map(holdings.map((h) => [h.symbol, h]));
     const watched = (state.watchlist ?? []).map((e) => e.symbol);
@@ -574,12 +627,12 @@ export function createApp({ config, db = null }) {
 
   app.get(
     '/api/dividends',
-    gate,
+    guestLimit('lookup', GUEST_LOOKUPS_PER_HOUR),
     wrap(async (req, res) => {
       const months = HORIZONS.includes(Number(req.query.months)) ? Number(req.query.months) : DEFAULT_HORIZON;
       const asOf = today();
 
-      const rows = await dividendRows(currentUserId(req), { months, asOf });
+      const rows = await dividendRows(currentUserId(req), { months, asOf, guest: isGuest(req) });
 
       res.json({
         asOf,
@@ -926,7 +979,7 @@ export function createApp({ config, db = null }) {
 
 app.get(
   '/api/quote',
-  gate,
+  guestLimit('lookup', GUEST_LOOKUPS_PER_HOUR),
   wrap(async (req, res) => {
     const symbol = symbolParam(req, res);
     if (!symbol) return;
@@ -937,7 +990,7 @@ app.get(
 
 app.get(
   '/api/history',
-  gate,
+  guestLimit('lookup', GUEST_LOOKUPS_PER_HOUR),
   wrap(async (req, res) => {
     const symbol = symbolParam(req, res);
     if (!symbol) return;
@@ -965,7 +1018,7 @@ app.get(
 // so opening a ticker you have already scanned is close to free against the rate limit.
 app.get(
   '/api/forecast',
-  gate,
+  guestLimit('lookup', GUEST_LOOKUPS_PER_HOUR),
   wrap(async (req, res) => {
     const symbol = symbolParam(req, res);
     if (!symbol) return;

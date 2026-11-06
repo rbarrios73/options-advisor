@@ -1265,3 +1265,20 @@ table.report-table .num { text-align: right; font-variant-numeric: tabular-nums;
 }
 
 .signin-back { margin-bottom: 12px; }
+
+/* --- guest mode -------------------------------------------------------------------------------- */
+/* A fieldset used only for `disabled` — it switches every control inside off at once, for a
+   guest looking at a page they cannot save. Its own border and padding are undone. */
+.plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.plain-fieldset:disabled input, .plain-fieldset:disabled select, .plain-fieldset:disabled button { cursor: not-allowed; }
+.tab.locked { color: var(--muted); }
+.tab-lock { margin-left: 5px; vertical-align: -1px; opacity: 0.8; }
+.guest-note { margin: 0 0 12px; }
+.signin-reason { margin: 0; }
+.landing-guest-note { margin: 14px 0 0; max-width: 56ch; }
+a.button-link {
+  display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 6px; text-decoration: none;
+  background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 13px;
+}
+a.button-link:hover { filter: brightness(1.08); }
+.tab.locked { display: inline-flex; align-items: center; white-space: nowrap; }

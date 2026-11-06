@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from './api.js';
 import { hrefFor, pagesFor, useRoute } from './router.js';
+import { PAGES, needsSignIn } from './pages.js';
 import { forgetLastScans, loadLastScan, saveLastScan } from './lastScan.js';
 import { applyTheme, readStoredTheme, storeTheme, watchSystemTheme } from './theme.js';
 import ThemeToggle from './components/ThemeToggle.jsx';
@@ -35,6 +36,8 @@ export default function App() {
   const pollRef = useRef(null);
 
   const user = session?.user ?? null;
+  // Accounts on and nobody signed in: the read-only pages are open, the rest lead to sign-in.
+  const guest = Boolean(session?.accounts && !user);
 
   // The theme the viewer chose. Seeded from this browser's storage so it matches what the inline
   // script in index.html already painted; replaced by the account's own choice once settings
@@ -66,7 +69,7 @@ export default function App() {
 
   // Settings belong to whoever is signed in, so they are fetched per user and dropped on sign-out.
   useEffect(() => {
-    if (!user) {
+    if (!user && !guest) {
       setSettings(null);
       return;
     }
@@ -75,11 +78,12 @@ export default function App() {
       .then((loaded) => {
         setSettings(loaded);
         // The account's choice wins over this browser's, so signing in on a new machine brings
-        // your appearance with you rather than adopting whatever that machine had.
-        if (loaded.theme) setThemeState(loaded.theme);
+        // your appearance with you rather than adopting whatever that machine had. A guest has
+        // no account choice, so this browser's stands.
+        if (loaded.theme && !loaded.guest) setThemeState(loaded.theme);
       })
       .catch((e) => setError(e.message));
-  }, [user?.id]);
+  }, [user?.id, guest]);
 
   const signedIn = useCallback((nextUser) => {
     // Leaving #/signin behind, so the address bar names the page you are on, not the door you
@@ -88,6 +92,7 @@ export default function App() {
     setSession((s) => ({ ...s, user: nextUser }));
     setError(null);
     setResult(null); // another person's scan is not this person's scan
+    setSettings(null); // and a guest's starter list is not theirs either
   }, []);
 
   const signOut = async () => {
@@ -150,10 +155,10 @@ export default function App() {
   // a scan you just ran is never swapped for an older one.
   const activeListId = settings?.activeWatchlistId;
   useEffect(() => {
-    if (!user || !settings || result || scanning) return;
-    const kept = loadLastScan(user.id, activeListId);
+    if ((!user && !guest) || !settings || result || scanning) return;
+    const kept = loadLastScan(user?.id ?? 'guest', activeListId);
     if (kept) setResult(kept);
-  }, [user?.id, activeListId, Boolean(settings)]);
+  }, [user?.id, guest, activeListId, Boolean(settings)]);
 
   const stopPolling = () => {
     clearInterval(pollRef.current);
@@ -181,7 +186,7 @@ export default function App() {
     try {
       const scanned = await api.scan({ fresh, limit: 60 });
       setResult(scanned);
-      saveLastScan(user?.id, activeListId, scanned);
+      saveLastScan(user?.id ?? 'guest', activeListId, scanned);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -199,43 +204,49 @@ export default function App() {
     );
   }
 
-  if (session.accounts && !user) {
-    // The bare address opens on the landing page. #/signin and #/signup open the form, and so
-    // does a link to any page of the app — someone sent #/simulator?… wants to sign in and see
-    // it, not read about the product first. useRoute re-renders this on every hash change.
+  if (guest) {
+    // The bare address is the landing page; #/signin and #/signup are the form. The read-only
+    // pages open as they are. Positions and the Simulator ask for an account first, and keep
+    // their address — so after signing in you land on the page you asked for, link and all.
+    // useRoute re-renders this on every hash change.
     const hash = window.location.hash.replace(/^#\/?/, '');
-    const view = AUTH_VIEW.exec(window.location.hash)?.[1] ?? (hash ? 'signin' : null);
+    const view = AUTH_VIEW.exec(window.location.hash)?.[1];
 
-    if (!view) {
+    if (!hash) {
       return (
         <LandingPage
           signupOpen={session.signupOpen}
           onStart={(mode) => (window.location.hash = `#/${mode}`)}
+          onExplore={() => (window.location.hash = hrefFor('screener'))}
           theme={theme}
           onTheme={setTheme}
         />
       );
     }
 
-    return (
-      <LoginPage
-        key={view}
-        initialMode={view === 'signup' && session.signupOpen ? 'signup' : 'signin'}
-        onBack={() => {
-          window.location.hash = '';
-        }}
-        onSignedIn={signedIn}
-        signupOpen={session.signupOpen}
-        theme={theme}
-        onTheme={setTheme}
-      />
-    );
+    if (view || needsSignIn(route.page, session)) {
+      return (
+        <LoginPage
+          key={view ?? route.page}
+          initialMode={view === 'signup' && session.signupOpen ? 'signup' : 'signin'}
+          reason={view ? null : `Sign in to use ${PAGES[route.page]?.label ?? 'that page'}. It works with your own trades, so it needs an account.`}
+          onBack={() => {
+            window.location.hash = view ? '' : hrefFor('screener');
+          }}
+          backLabel={view ? '← About Option Advisor' : '← Back to the Screener'}
+          onSignedIn={signedIn}
+          signupOpen={session.signupOpen}
+          theme={theme}
+          onTheme={setTheme}
+        />
+      );
+    }
   }
 
   // A member who types #/users gets the Screener rather than a broken page. The server refuses
   // the data either way; this is just so the app does not look broken.
   const allowed = pagesFor(session);
-  const page = allowed.some(([key]) => key === route.page) ? route.page : 'screener';
+  const page = allowed.some(([key]) => key === route.page) && !needsSignIn(route.page, session) ? route.page : 'screener';
 
   return (
     <main className="app">
@@ -248,28 +259,53 @@ export default function App() {
         </a>
 
         <nav className="tabs" aria-label="Pages">
-          {allowed.map(([key, { label }]) => (
-            <a
-              key={key}
-              href={hrefFor(key)}
-              className={page === key ? 'tab active' : 'tab'}
-              aria-current={page === key ? 'page' : undefined}
-            >
-              {label}
-            </a>
-          ))}
+          {allowed.map(([key, { label }]) => {
+            // Shown to a guest, not hidden: the tab is how they learn the page exists. It leads
+            // to sign-in, and says so before the click rather than after.
+            const locked = needsSignIn(key, session);
+            return (
+              <a
+                key={key}
+                href={hrefFor(key)}
+                className={page === key ? 'tab active' : locked ? 'tab locked' : 'tab'}
+                aria-current={page === key ? 'page' : undefined}
+                title={locked ? 'Sign in to use this page' : undefined}
+              >
+                {label}
+                {locked && (
+                  <>
+                    <LockIcon />
+                    <span className="sr-only"> (sign in required)</span>
+                  </>
+                )}
+              </a>
+            );
+          })}
         </nav>
 
         <div className="who">
           <ThemeToggle value={theme} onChange={setTheme} />
 
-          {session.accounts && (
+          {guest ? (
             <>
-              <span className="muted small">{user.email}</span>
-              <button type="button" className="link-button" onClick={signOut}>
-                Sign out
-              </button>
+              <a className="link-button" href="#/signin">
+                Sign in
+              </a>
+              {session.signupOpen && (
+                <a className="primary button-link" href="#/signup">
+                  Create account
+                </a>
+              )}
             </>
+          ) : (
+            session.accounts && (
+              <>
+                <span className="muted small">{user.email}</span>
+                <button type="button" className="link-button" onClick={signOut}>
+                  Sign out
+                </button>
+              </>
+            )
           )}
         </div>
       </header>
@@ -290,17 +326,18 @@ export default function App() {
           onWatchlist={saveWatchlist}
           lists={watchlists}
           accounts={session.accounts}
+          guest={guest}
         />
       ) : page === 'positions' ? (
         <PositionsPage />
       ) : page === 'dividends' ? (
-        <DividendsPage />
+        <DividendsPage guest={guest} />
       ) : page === 'ticker' ? (
         <TickerPage
           key={route.params.symbol ?? ''}
           watchlist={settings.watchlist}
           listName={settings.watchlists?.find((l) => l.id === settings.activeWatchlistId)?.name}
-          onWatchlist={saveWatchlist}
+          onWatchlist={guest ? undefined : saveWatchlist}
           params={route.params}
         />
       ) : page === 'simulator' ? (
@@ -317,6 +354,7 @@ export default function App() {
           onActivate={watchlists.activate}
           onFilters={saveFilters}
           scan={{ result, scanning, progress, run: runScan }}
+          guest={guest}
         />
       )}
     </main>
@@ -325,3 +363,12 @@ export default function App() {
 
 /** The two addresses that mean "show the sign-in form" to someone signed out. */
 const AUTH_VIEW = /^#\/(signin|signup)\b/;
+
+function LockIcon() {
+  return (
+    <svg className="tab-lock" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}

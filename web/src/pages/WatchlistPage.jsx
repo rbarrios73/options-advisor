@@ -17,7 +17,7 @@ import { price as fmtPrice } from '../format.js';
  * button is a list someone will leave unsaved. Text edits save when the field is left, so typing a
  * note is not a request per keystroke.
  */
-export default function WatchlistPage({ watchlist, watchlists, activeId, onWatchlist, lists, accounts }) {
+export default function WatchlistPage({ watchlist, watchlists, activeId, onWatchlist, lists, accounts, guest = false }) {
   const [typed, setTyped] = useState('');
   const [note, setNote] = useState('');
   const [problem, setProblem] = useState(null);
@@ -152,6 +152,15 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
         </p>
       </div>
 
+      {guest && (
+        <p className="notice small guest-note">
+          This is the starter watchlist the screener scans for visitors.{' '}
+          <a href="#/signup">Create a free account</a> or <a href="#/signin">sign in</a> to keep your
+          own lists — add and reorder tickers, write notes and set earnings dates.
+        </p>
+      )}
+
+      {!guest && (
       <nav className="lists" aria-label="Watchlists">
         {watchlists.map((list) => (
           <button
@@ -177,8 +186,9 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
           </button>
         )}
       </nav>
+      )}
 
-      {active && (
+      {active && !guest && (
         <div className="list-bar">
           <ListName key={active.id} list={active} busy={busy} onRename={(name) => run(() => lists.rename(active.id, name))} />
 
@@ -206,6 +216,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
 
       {listProblem && <p className="error small">{listProblem}</p>}
 
+      {!guest && (
       <form className="add-row" onSubmit={add}>
         <label>
           <span className="muted small">Ticker</span>
@@ -239,6 +250,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
           {checking ? 'Checking…' : 'Add'}
         </button>
       </form>
+      )}
 
       {problem && (
         <p className="error small">
@@ -257,7 +269,8 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
           scan has nothing to look at.
         </p>
       ) : (
-        <div className="scroll-x">
+        // Disabled as a whole for a guest: the table still reads, nothing in it edits.
+        <fieldset className="plain-fieldset scroll-x" disabled={guest}>
           <table className="watchlist-table">
             <caption className="muted small">
               Scanned in this order. Prices come from the same cache as a scan, so showing them
@@ -290,7 +303,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
               ))}
             </tbody>
           </table>
-        </div>
+        </fieldset>
       )}
     </div>
   );

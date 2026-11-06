@@ -107,7 +107,7 @@ async function startServer(overrides = {}) {
 
 // --- the gate --------------------------------------------------------------------------------
 
-test('every data route needs a session; health and identity do not', async (t) => {
+test('writes, positions, the simulator’s chains and the AI need a session; health and identity do not', async (t) => {
   const s = await startServer();
   t.after(s.close);
   const anon = s.client();
@@ -123,12 +123,16 @@ test('every data route needs a session; health and identity do not', async (t) =
   );
 
   for (const [path, method] of [
-    ['/api/settings', 'GET'],
-    ['/api/scan', 'POST'],
-    ['/api/scan/progress', 'GET'],
-    ['/api/forecast?symbol=SPY', 'GET'],
     ['/api/watchlist', 'PUT'],
+    ['/api/watchlists', 'POST'],
     ['/api/filters', 'PUT'],
+    ['/api/theme', 'PUT'],
+    ['/api/goals', 'PUT'],
+    ['/api/positions', 'GET'],
+    ['/api/positions', 'POST'],
+    ['/api/dividends/SPY', 'PUT'],
+    ['/api/brief', 'GET'],
+    ['/api/explain', 'POST'],
     ['/api/expirations?symbol=SPY', 'GET'],
     ['/api/chain?symbol=SPY&expiration=2026-10-23', 'GET'],
     ['/api/users', 'GET'],
@@ -136,6 +140,54 @@ test('every data route needs a session; health and identity do not', async (t) =
     const r = await anon(path, { method, body: method === 'GET' ? undefined : {} });
     assert.equal(r.status, 401, `${method} ${path}`);
   }
+});
+
+test('a guest can read the public pages, on the starter list and default filters', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const anon = s.client();
+
+  const settings = await anon('/api/settings');
+  assert.equal(settings.status, 200);
+  assert.equal(settings.body.guest, true);
+  assert.equal(settings.body.user, null);
+  assert.equal(settings.body.advisor, null, 'the advisor is an account feature');
+  assert.ok(settings.body.watchlist.length > 0, 'the starter watchlist');
+  assert.equal(settings.body.watchlist[0].symbol, 'SPY');
+
+  for (const path of ['/api/scan/progress', '/api/quote?symbol=SPY', '/api/history?symbol=SPY', '/api/forecast?symbol=SPY', '/api/dividends']) {
+    assert.equal((await anon(path)).status, 200, path);
+  }
+});
+
+test('a guest scan ignores the symbols and filters it was sent', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const anon = s.client();
+
+  const starter = (await anon('/api/settings')).body.watchlist.map((e) => e.symbol);
+  const r = await anon('/api/scan', {
+    method: 'POST',
+    body: { symbols: ['NVDA'], filters: { maxDte: 900 }, fresh: true, limit: 5 },
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.symbols.map((x) => x.symbol), starter, 'the starter list, not the one sent');
+});
+
+test('guests are capped per hour; a signed-in person is not', async (t) => {
+  const s = await startServer({ guestScansPerHour: 2 });
+  t.after(s.close);
+
+  const anon = s.client();
+  assert.equal((await anon('/api/scan', { method: 'POST', body: {} })).status, 200);
+  assert.equal((await anon('/api/scan', { method: 'POST', body: {} })).status, 200);
+  const third = await anon('/api/scan', { method: 'POST', body: {} });
+  assert.equal(third.status, 429);
+  assert.match(third.body.error, /Sign in/);
+
+  const member = s.client();
+  await member.signIn(ADMIN);
+  for (let i = 0; i < 3; i++) assert.equal((await member('/api/scan', { method: 'POST', body: { limit: 5 } })).status, 200);
 });
 
 test('signing in sets an HttpOnly session cookie and signing out clears it', async (t) => {
@@ -159,11 +211,11 @@ test('signing in sets an HttpOnly session cookie and signing out clears it', asy
   assert.match(ok.setCookie, /SameSite=Lax/, 'another site cannot make the browser send it');
   assert.ok(!/Secure/.test(ok.setCookie), 'not Secure in development, or localhost could not sign in');
 
-  assert.equal((await call('/api/settings')).status, 200);
+  assert.equal((await call('/api/positions')).status, 200);
 
   const out = await call('/api/logout', { method: 'POST' });
   assert.match(out.setCookie, /oa_session=;/);
-  assert.equal((await call('/api/settings')).status, 401, 'the cookie no longer works');
+  assert.equal((await call('/api/positions')).status, 401, 'the cookie no longer works');
 });
 
 test('the cookie is marked Secure in production', async (t) => {
@@ -232,7 +284,7 @@ test('only an admin can manage users', async (t) => {
   assert.equal((await member(`/api/users/${created.body.user.id}`, { method: 'DELETE' })).status, 403);
 
   // But a member can use the app.
-  assert.equal((await member('/api/settings')).status, 200);
+  assert.equal((await member('/api/positions')).status, 200);
 });
 
 test('account creation rejects duplicates and weak passwords with a readable message', async (t) => {
@@ -282,7 +334,7 @@ test('an admin resetting a password signs that person out everywhere', async (t)
 
   const member = s.client();
   await member.signIn(MEMBER);
-  assert.equal((await member('/api/settings')).status, 200);
+  assert.equal((await member('/api/positions')).status, 200);
 
   const reset = await admin(`/api/users/${created.body.user.id}`, {
     method: 'PATCH',
@@ -290,7 +342,7 @@ test('an admin resetting a password signs that person out everywhere', async (t)
   });
   assert.equal(reset.status, 200);
 
-  assert.equal((await member('/api/settings')).status, 401, 'the open session is gone');
+  assert.equal((await member('/api/positions')).status, 401, 'the open session is gone');
   assert.equal((await member('/api/login', { method: 'POST', body: MEMBER })).status, 401, 'old password is gone');
   assert.equal(
     (await member('/api/login', { method: 'POST', body: { email: MEMBER.email, password: 'a brand new password' } }))
@@ -309,11 +361,11 @@ test('disabling an account ends its session immediately', async (t) => {
 
   const member = s.client();
   await member.signIn(MEMBER);
-  assert.equal((await member('/api/settings')).status, 200);
+  assert.equal((await member('/api/positions')).status, 200);
 
   await admin(`/api/users/${created.body.user.id}`, { method: 'PATCH', body: { disabled: true } });
 
-  assert.equal((await member('/api/settings')).status, 401);
+  assert.equal((await member('/api/positions')).status, 401);
   assert.equal((await member('/api/login', { method: 'POST', body: MEMBER })).status, 401, 'and cannot sign back in');
 });
 
@@ -1244,12 +1296,14 @@ test('a holding is removed on request, and the symbol stays on the screen', asyn
   assert.equal(spy.shares, null);
 });
 
-test('the dividend screen needs a session like everything else', async (t) => {
+test('a guest can read the dividend screen but not keep holdings', async (t) => {
   const s = await startServer();
   t.after(s.close);
   const anon = s.client();
 
-  assert.equal((await anon('/api/dividends')).status, 401);
+  const screen = await anon('/api/dividends');
+  assert.equal(screen.status, 200);
+  assert.ok(screen.body.rows.every((r) => !r.tracked), 'a guest holds nothing');
   assert.equal((await anon('/api/dividends/SPY', { method: 'PUT', body: { shares: 1 } })).status, 401);
   assert.equal((await anon('/api/dividends/SPY', { method: 'DELETE' })).status, 401);
 });
@@ -1608,13 +1662,14 @@ test('the advisor needs a session like everything else', async (t) => {
   assert.equal((await s.client()('/api/explain', { method: 'POST', body: { question: 'q' } })).status, 401);
 });
 
-test('quote and history need a session, and reject a nonsense symbol', async (t) => {
+test('quote and history are open to guests, and reject a nonsense symbol', async (t) => {
   const s = await startServer();
   t.after(s.close);
 
   const anon = s.client();
-  assert.equal((await anon('/api/quote?symbol=SPY')).status, 401);
-  assert.equal((await anon('/api/history?symbol=SPY')).status, 401);
+  assert.equal((await anon('/api/quote?symbol=SPY')).status, 200);
+  assert.equal((await anon('/api/history?symbol=SPY')).status, 200);
+  assert.equal((await anon('/api/quote?symbol=not-a-symbol')).status, 400, 'a guest is checked the same way');
 
   const call = s.client();
   await call.signIn(ADMIN);

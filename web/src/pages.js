@@ -6,10 +6,12 @@
 export const PAGES = {
   screener: { label: 'Screener' },
   watchlist: { label: 'Watchlist' },
-  positions: { label: 'Positions' },
+  // Open to guests except where noted: these two are about your own trades, so they need an
+  // account even when everything else does not. A guest still sees the tab, which leads to sign-in.
+  positions: { label: 'Positions', signInRequired: true },
   dividends: { label: 'Dividends' },
   ticker: { label: 'Ticker' },
-  simulator: { label: 'Simulator' },
+  simulator: { label: 'Simulator', signInRequired: true },
 
   // accountsOnly as well as adminOnly, and both are load-bearing: with no database the app runs
   // single-user and calls that lone user an admin, so adminOnly alone would show a Users tab
@@ -26,4 +28,12 @@ export function pagesFor({ accounts, user }) {
       (!page.accountsOnly || accounts) &&
       (!page.signedInOnly || Boolean(user)),
   );
+}
+
+/**
+ * Whether opening this page means signing in first. Only with accounts on and nobody signed in:
+ * single-user mode sits behind its own password, and a signed-in person is already through.
+ */
+export function needsSignIn(page, { accounts, user }) {
+  return Boolean(accounts && !user && (PAGES[page]?.signInRequired || PAGES[page]?.signedInOnly || PAGES[page]?.adminOnly));
 }

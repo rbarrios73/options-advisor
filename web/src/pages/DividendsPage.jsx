@@ -17,7 +17,7 @@ import IncomeChart from '../components/IncomeChart.jsx';
  * Nothing here is a recommendation. Rates are what has been declared, projections assume the rate
  * does not change, and the page says so in the one place somebody might forget it.
  */
-export default function DividendsPage() {
+export default function DividendsPage({ guest = false }) {
   const [data, setData] = useState(null);
   const [months, setMonths] = useState(12);
   const [sort, setSort] = useState('yield');
@@ -144,7 +144,14 @@ export default function DividendsPage() {
 
         {held.length === 0 ? (
           <p className="muted small">
-            Add a share count to a row below and the months you get paid in will appear here.
+            {guest ? (
+              <>
+                <a href="#/signin">Sign in</a> and add your share counts to see the months you get
+                paid in.
+              </>
+            ) : (
+              'Add a share count to a row below and the months you get paid in will appear here.'
+            )}
           </p>
         ) : (
           <IncomeChart payments={allPayments} months={months} asOf={asOf} />
@@ -176,6 +183,7 @@ export default function DividendsPage() {
                 onEdit={() => setEditing(editing === row.symbol ? null : row.symbol)}
                 onSave={save}
                 onRemove={remove}
+                guest={guest}
               />
             ))}
           </tbody>
@@ -199,7 +207,7 @@ export default function DividendsPage() {
   );
 }
 
-function Row({ row, editing, onEdit, onSave, onRemove }) {
+function Row({ row, editing, onEdit, onSave, onRemove, guest }) {
   const frequency = FREQUENCIES[row.frequency]?.label ?? '—';
 
   return (
@@ -227,6 +235,8 @@ function Row({ row, editing, onEdit, onSave, onRemove }) {
           <RiskCell risk={row.risk} availability={row.availability} />
         </td>
         <td className="order-cell">
+          {/* Holdings are saved to an account; a guest sees the screen without them. */}
+          {!guest && (
           <div className="row-actions">
             <button type="button" onClick={onEdit}>
               {editing ? 'Close' : row.tracked ? 'Edit' : 'Add shares'}
@@ -237,6 +247,7 @@ function Row({ row, editing, onEdit, onSave, onRemove }) {
               </button>
             )}
           </div>
+          )}
         </td>
       </tr>
 

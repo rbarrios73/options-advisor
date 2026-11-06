@@ -11,7 +11,7 @@ import { STALE_AFTER_MS, ageOf } from '../lastScan.js';
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
  * does not throw away a scan — and does not spend another round of provider requests.
  */
-export default function ScreenerPage({ settings, onFilters, onActivate, scan }) {
+export default function ScreenerPage({ settings, onFilters, onActivate, scan, guest = false }) {
   const [showFilters, setShowFilters] = useState(false);
   const { result, scanning, progress, run } = scan;
 
@@ -19,7 +19,16 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
     <>
       {/* Above everything, including the scan controls: it is about positions you already hold,
           which outranks anything you might open today. */}
-      <BriefPanel />
+      {/* The brief is about your positions, which a guest does not have. */}
+      {!guest && <BriefPanel />}
+
+      {guest && (
+        <p className="notice small guest-note">
+          You are scanning the starter watchlist with the default filters.{' '}
+          <a href="#/signup">Create a free account</a> or <a href="#/signin">sign in</a> to scan your
+          own lists, tune the filters, and open trades in the Simulator.
+        </p>
+      )}
 
       <div className="page-head">
         <p className="muted small">
@@ -53,9 +62,12 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
           <button className="primary" onClick={() => run()} disabled={scanning}>
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
-          <button onClick={() => run({ fresh: true })} disabled={scanning} title="Ignore cached chains">
-            Refresh data
-          </button>
+          {/* Bypassing the cache spends the shared rate limit, so it is an account feature. */}
+          {!guest && (
+            <button onClick={() => run({ fresh: true })} disabled={scanning} title="Ignore cached chains">
+              Refresh data
+            </button>
+          )}
           <button onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide filters' : 'Filters'}</button>
         </div>
       </div>
@@ -65,12 +77,17 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
           <Watchlist watchlist={settings.watchlist} name={settings.watchlists?.find((l) => l.id === settings.activeWatchlistId)?.name} />
 
           {showFilters && (
-            <Filters
-              filters={settings.filters}
-              weights={settings.weights}
-              onFilters={(filters) => onFilters(filters, settings.weights)}
-              onWeights={(weights) => onFilters(settings.filters, weights)}
-            />
+            // A guest sees the filters the scan uses, but cannot change them: there is no account
+            // to save them to, and the server scans a guest on the defaults whatever is sent.
+            <fieldset className="plain-fieldset" disabled={guest}>
+              {guest && <p className="muted small">The default filters. Sign in to tune your own.</p>}
+              <Filters
+                filters={settings.filters}
+                weights={settings.weights}
+                onFilters={(filters) => onFilters(filters, settings.weights)}
+                onWeights={(weights) => onFilters(settings.filters, weights)}
+              />
+            </fieldset>
           )}
 
           <p className="muted small provider">
@@ -113,7 +130,9 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan }) 
               {/* Above the table rather than below it. A scan can return sixty rows, and a box at
                   the bottom is a box nobody scrolls to — this sits where your eye lands when the
                   scan finishes, and the answer appears there too. */}
-              <AskPanel advisor={settings.advisor} hasResult={result.candidates.length > 0} />
+              {/* An account feature (it costs money per question), and its "off" message is
+                  written for whoever runs the app — neither is for a visitor. */}
+              {!guest && <AskPanel advisor={settings.advisor} hasResult={result.candidates.length > 0} />}
 
               {result.candidates.length === 0 ? (
                 <p className="muted">

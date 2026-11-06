@@ -78,6 +78,19 @@ function stateFrom({ settings, lists, activeId }) {
 }
 
 /**
+ * What a signed-out visitor sees: the starter watchlist and the default filters, the same for
+ * everyone and owned by nobody. Built fresh each time and never written anywhere — a guest has
+ * no row, so there is nothing to save to and nothing of anyone else's to read.
+ */
+export function guestState() {
+  return stateFrom({
+    settings: {},
+    lists: [{ id: 'guest', name: 'Starter watchlist', sortOrder: 0, entries: cleanWatchlist(DEFAULT_WATCHLIST) }],
+    activeId: 'guest',
+  });
+}
+
+/**
  * Settings in a JSON file — the single-user mode, used when there is no DATABASE_URL.
  *
  * Every method takes a userId for interface compatibility with the database store and ignores
