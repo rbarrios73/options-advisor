@@ -6,7 +6,7 @@
 
 import { DEFAULT_THEME, THEME_STORAGE_KEY, cleanTheme, resolveTheme } from '@domain/theme.js';
 
-export { THEMES, THEME_LABELS, DEFAULT_THEME, cleanTheme, resolveTheme } from '@domain/theme.js';
+export { THEMES, PICKABLE_THEMES, THEME_LABELS, DEFAULT_THEME, cleanTheme, resolveTheme } from '@domain/theme.js';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 

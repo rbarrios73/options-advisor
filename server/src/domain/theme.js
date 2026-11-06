@@ -10,6 +10,13 @@
 
 export const THEMES = ['light', 'dark', 'system'];
 
+/**
+ * What the Appearance menu offers. 'system' is still a valid stored value — it is the default,
+ * what every visitor has until they choose — but it is not offered as a choice: the menu shows
+ * the light or dark it resolved to, and picking either one makes it explicit.
+ */
+export const PICKABLE_THEMES = ['light', 'dark'];
+
 /** What an account that has never chosen gets. */
 export const DEFAULT_THEME = 'system';
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_THEME,
+  PICKABLE_THEMES,
   THEMES,
   THEME_LABELS,
   cleanTheme,
@@ -42,4 +43,12 @@ test('an explicit choice beats the machine, in both directions', () => {
 test('a junk preference still resolves, following the machine', () => {
   assert.equal(resolveTheme(undefined, true), 'dark');
   assert.equal(resolveTheme('nonsense', false), 'light');
+});
+
+test('the menu offers light and dark only; the default still follows the machine', () => {
+  assert.deepEqual(PICKABLE_THEMES, ['light', 'dark']);
+  for (const theme of PICKABLE_THEMES) assert.ok(THEMES.includes(theme), `${theme} is storable`);
+  // Someone who never chose is shown whichever the machine resolved to.
+  assert.ok(PICKABLE_THEMES.includes(resolveTheme(DEFAULT_THEME, true)));
+  assert.ok(PICKABLE_THEMES.includes(resolveTheme(DEFAULT_THEME, false)));
 });
