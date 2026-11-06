@@ -15,8 +15,8 @@ import ThemeToggle from '../components/ThemeToggle.jsx';
  * send, and a reset without it is not a reset, it is a back door. An administrator sets a new
  * password instead — which is what the message at the bottom says, so nobody is left guessing.
  */
-export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme }) {
-  const [mode, setMode] = useState('signin');
+export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, initialMode = 'signin', onBack }) {
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,6 +50,11 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme }) {
 
   return (
     <div className="signin">
+      {onBack && (
+        <button type="button" className="link-button signin-back" onClick={onBack}>
+          ← About Option Advisor
+        </button>
+      )}
       <form className="panel signin-card" onSubmit={submit}>
         {/* The logo is the heading here, so it carries the name rather than decorating one. */}
         <img className="signin-logo" src="/logo.png" alt="Option Advisor" width="240" height="226" />

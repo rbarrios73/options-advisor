@@ -11,6 +11,7 @@ import TickerPage from './pages/TickerPage.jsx';
 import WatchlistPage from './pages/WatchlistPage.jsx';
 import PositionsPage from './pages/PositionsPage.jsx';
 import DividendsPage from './pages/DividendsPage.jsx';
+import LandingPage from './pages/LandingPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
@@ -81,6 +82,9 @@ export default function App() {
   }, [user?.id]);
 
   const signedIn = useCallback((nextUser) => {
+    // Leaving #/signin behind, so the address bar names the page you are on, not the door you
+    // came in by. Any other page in the hash is kept: that is where a shared link meant to go.
+    if (AUTH_VIEW.test(window.location.hash)) window.history.replaceState(null, '', hrefFor('screener'));
     setSession((s) => ({ ...s, user: nextUser }));
     setError(null);
     setResult(null); // another person's scan is not this person's scan
@@ -88,6 +92,8 @@ export default function App() {
 
   const signOut = async () => {
     forgetLastScans(user?.id);
+    // Back to the front door, not to a sign-in form over the page you just left.
+    window.history.replaceState(null, '', window.location.pathname);
     try {
       await api.logout();
     } catch (e) {
@@ -194,8 +200,30 @@ export default function App() {
   }
 
   if (session.accounts && !user) {
+    // The bare address opens on the landing page. #/signin and #/signup open the form, and so
+    // does a link to any page of the app — someone sent #/simulator?… wants to sign in and see
+    // it, not read about the product first. useRoute re-renders this on every hash change.
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    const view = AUTH_VIEW.exec(window.location.hash)?.[1] ?? (hash ? 'signin' : null);
+
+    if (!view) {
+      return (
+        <LandingPage
+          signupOpen={session.signupOpen}
+          onStart={(mode) => (window.location.hash = `#/${mode}`)}
+          theme={theme}
+          onTheme={setTheme}
+        />
+      );
+    }
+
     return (
       <LoginPage
+        key={view}
+        initialMode={view === 'signup' && session.signupOpen ? 'signup' : 'signin'}
+        onBack={() => {
+          window.location.hash = '';
+        }}
         onSignedIn={signedIn}
         signupOpen={session.signupOpen}
         theme={theme}
@@ -294,3 +322,6 @@ export default function App() {
     </main>
   );
 }
+
+/** The two addresses that mean "show the sign-in form" to someone signed out. */
+const AUTH_VIEW = /^#\/(signin|signup)\b/;
