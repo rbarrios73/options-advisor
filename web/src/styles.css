@@ -1328,3 +1328,12 @@ table.adjust-table tbody th { font-weight: 400; min-width: 220px; }
 .adjust-load { margin: 12px 0 0; }
 .adjust-note { margin: 10px 0 0; }
 .nowrap { white-space: nowrap; }
+
+/* --- Positions: editing a recorded trade ------------------------------------------------------ */
+.edit-form { flex-direction: column; align-items: stretch; gap: 10px; }
+.edit-grid { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
+.edit-grid .control.grow { flex: 1 1 220px; }
+.edit-grid .control.grow input { width: 100%; }
+.edit-settlement { padding-top: 10px; border-top: 1px dashed var(--line); }
+.edit-form .edit-reopen { flex-basis: 100%; }
+.edit-form .form-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

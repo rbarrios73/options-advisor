@@ -350,6 +350,7 @@ function AddPosition({ onAdd, busy }) {
 
 function Row({ position, earnings, busy, onPatch, onDelete }) {
   const [settling, setSettling] = useState(null); // 'closed' | 'assigned' | 'rolled'
+  const [editing, setEditing] = useState(false);
   const breach = position.breach ?? breachOf(position, position.spot);
   const expiringSoon = position.status === 'open' && position.daysLeft <= 2;
 
@@ -404,9 +405,31 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         </td>
 
         <td className="row-actions">
+          {/* Every row can be edited, open or settled: a mistyped strike or a fill entered a
+              dollar out is fixed in place rather than by deleting and re-adding the trade. */}
+          <button
+            type="button"
+            disabled={busy}
+            aria-expanded={editing}
+            aria-label={`Edit ${position.symbol} ${position.type} ${shortDate(position.expiration)}`}
+            onClick={() => {
+              setEditing((v) => !v);
+              setSettling(null);
+            }}
+          >
+            {/* Not "Close" while open: beside Settle, that reads as closing the trade. */}
+            Edit
+          </button>
           {position.status === 'open' ? (
             <>
-              <button type="button" disabled={busy} onClick={() => setSettling(settling ? null : 'closed')}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setSettling(settling ? null : 'closed');
+                  setEditing(false);
+                }}
+              >
                 Settle
               </button>
               <SimulateLink position={position} />
@@ -418,6 +441,22 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
           )}
         </td>
       </tr>
+
+      {editing && (
+        <tr className="settle-row edit-row">
+          <td colSpan={13}>
+            <EditForm
+              position={position}
+              busy={busy}
+              onCancel={() => setEditing(false)}
+              onSave={(changes) => {
+                onPatch(changes);
+                setEditing(false);
+              }}
+            />
+          </td>
+        </tr>
+      )}
 
       {settling && (
         <tr className="settle-row">
@@ -435,6 +474,198 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * Every field of a recorded trade, editable in place.
+ *
+ * The same fields as adding one, plus how it ended once it has: the date it was settled, what it
+ * cost to close, where it was rolled, what an assignment lost. Setting it back to Open clears
+ * those, so a trade settled by mistake does not keep counting towards the goals and the results
+ * report as if it had closed.
+ */
+function EditForm({ position, busy, onCancel, onSave }) {
+  const field = (v) => (v == null ? '' : String(v));
+  const [draft, setDraft] = useState(() => ({
+    symbol: position.symbol,
+    type: position.type,
+    account: position.account ?? '',
+    contracts: field(position.contracts),
+    shortStrike: field(position.shortStrike),
+    longStrike: field(position.longStrike),
+    expiration: position.expiration,
+    tradeDate: position.tradeDate ?? '',
+    premium: field(position.premium),
+    note: position.note ?? '',
+    status: position.status,
+    closedAt: position.closedAt ?? '',
+    closeCost: field(position.closeCost),
+    assignmentLoss: field(position.assignmentLoss),
+    rolledToExpiration: position.rolledToExpiration ?? '',
+    rolledToShortStrike: field(position.rolledToShortStrike),
+  }));
+  const set = (key) => (event) => setDraft((d) => ({ ...d, [key]: event.target.value }));
+
+  const spec = POSITION_TYPES[draft.type];
+  const settled = draft.status !== 'open';
+  const numOrNull = (v) => (String(v).trim() === '' ? null : Number(v));
+
+  // What would stop the server accepting it, said before the click rather than after.
+  const problem = !/^[A-Za-z.]{1,6}$/.test(draft.symbol.trim())
+    ? 'A symbol is one to six letters.'
+    : !draft.expiration
+      ? 'An expiry date is needed.'
+      : settled && !draft.closedAt
+        ? 'A settled trade needs the date it was settled.'
+        : draft.closedAt && draft.tradeDate && draft.closedAt < draft.tradeDate
+          ? 'It cannot be settled before it was opened.'
+          : null;
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (problem) return;
+    onSave({
+      symbol: draft.symbol.trim().toUpperCase(),
+      type: draft.type,
+      account: draft.account,
+      contracts: numOrNull(draft.contracts) ?? 1,
+      shortStrike: numOrNull(draft.shortStrike),
+      longStrike: spec?.legs === 1 ? null : numOrNull(draft.longStrike),
+      expiration: draft.expiration,
+      tradeDate: draft.tradeDate || null,
+      premium: numOrNull(draft.premium),
+      note: draft.note,
+      status: draft.status,
+      // Reopened: none of the ending is true any more.
+      closedAt: settled ? draft.closedAt : null,
+      closeCost: settled && draft.status !== 'assigned' ? numOrNull(draft.closeCost) : null,
+      assignmentLoss: draft.status === 'assigned' ? numOrNull(draft.assignmentLoss) : null,
+      rolledToExpiration: draft.status === 'rolled' ? draft.rolledToExpiration || null : null,
+      rolledToShortStrike: draft.status === 'rolled' ? numOrNull(draft.rolledToShortStrike) : null,
+    });
+  };
+
+  return (
+    <form className="settle-form edit-form" onSubmit={submit} aria-label={`Edit ${position.symbol}`}>
+      <div className="edit-grid">
+        <label className="control">
+          <span>Symbol</span>
+          <input className="w-symbol" value={draft.symbol} onChange={set('symbol')} maxLength={6} autoFocus />
+        </label>
+        <label className="control">
+          <span>Type</span>
+          <select value={draft.type} onChange={set('type')}>
+            {TYPES.map(([key, { label }]) => (
+              <option key={key} value={key}>
+                {key} — {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="control">
+          <span>Account</span>
+          <input value={draft.account} onChange={set('account')} list="accounts" />
+        </label>
+        <label className="control">
+          <span>Contracts</span>
+          <input type="number" min="1" className="w-qty" value={draft.contracts} onChange={set('contracts')} />
+        </label>
+        <label className="control">
+          <span>{spec?.short === false ? 'Strike' : 'Short strike'}</span>
+          <input type="number" step="0.5" className="w-qty" value={draft.shortStrike} onChange={set('shortStrike')} />
+        </label>
+        {spec?.legs !== 1 && (
+          <label className="control">
+            <span>Long strike</span>
+            <input type="number" step="0.5" className="w-qty" value={draft.longStrike} onChange={set('longStrike')} />
+          </label>
+        )}
+        <label className="control">
+          <span>Expiry</span>
+          <input type="date" value={draft.expiration} onChange={set('expiration')} />
+        </label>
+        <label className="control">
+          <span>Opened</span>
+          <input type="date" value={draft.tradeDate} onChange={set('tradeDate')} />
+        </label>
+        <label className="control">
+          <span>{settled && draft.status !== 'assigned' ? 'Opening credit $' : 'Premium $'}</span>
+          <input
+            type="number"
+            step="0.01"
+            className="w-qty"
+            value={draft.premium}
+            onChange={set('premium')}
+            title="Total for the whole position, as the broker's fill shows it — a debit is negative"
+          />
+        </label>
+        <label className="control grow">
+          <span>Note</span>
+          <input value={draft.note} onChange={set('note')} maxLength={200} />
+        </label>
+      </div>
+
+      <div className="edit-grid edit-settlement">
+        <label className="control">
+          <span>Status</span>
+          <select value={draft.status} onChange={set('status')}>
+            {Object.entries(STATUSES).map(([key, { label }]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {settled && (
+          <label className="control">
+            <span>Settled on</span>
+            <input type="date" value={draft.closedAt} onChange={set('closedAt')} />
+          </label>
+        )}
+        {(draft.status === 'closed' || draft.status === 'rolled') && (
+          <label className="control">
+            <span>Cost to close $</span>
+            <input type="number" step="0.01" min="0" className="w-qty" value={draft.closeCost} onChange={set('closeCost')} placeholder="0" />
+          </label>
+        )}
+        {draft.status === 'assigned' && (
+          <label className="control">
+            <span>Assignment loss $</span>
+            <input type="number" step="1" min="0" className="w-qty" value={draft.assignmentLoss} onChange={set('assignmentLoss')} />
+          </label>
+        )}
+        {draft.status === 'rolled' && (
+          <>
+            <label className="control">
+              <span>Rolled to expiry</span>
+              <input type="date" value={draft.rolledToExpiration} onChange={set('rolledToExpiration')} />
+            </label>
+            <label className="control">
+              <span>Rolled to strike</span>
+              <input type="number" step="0.5" className="w-qty" value={draft.rolledToShortStrike} onChange={set('rolledToShortStrike')} />
+            </label>
+          </>
+        )}
+        {position.status !== 'open' && draft.status === 'open' && (
+          <p className="muted small edit-reopen">
+            Reopening clears the settlement date and costs, so it stops counting towards the goals and
+            the results report.
+          </p>
+        )}
+      </div>
+
+      <div className="form-actions">
+        <button type="submit" className="primary" disabled={busy || Boolean(problem)}>
+          Save changes
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        {problem && <span className="warning small">{problem}</span>}
+      </div>
+    </form>
   );
 }
 
