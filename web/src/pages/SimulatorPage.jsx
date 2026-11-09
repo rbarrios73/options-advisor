@@ -16,6 +16,7 @@ import {
   positionGreeks,
   summarize,
 } from '@domain/simulate.js';
+import { exposure, probabilityReliability, riskAlerts, unrealizedPnl } from '@domain/manage.js';
 
 import { api } from '../api.js';
 import { replaceParams } from '../router.js';
@@ -24,6 +25,8 @@ import PayoffChart from '../components/PayoffChart.jsx';
 import DecayChart from '../components/DecayChart.jsx';
 import SavePosition from '../components/SavePosition.jsx';
 import PnlGrid from '../components/PnlGrid.jsx';
+import RiskAlerts from '../components/RiskAlerts.jsx';
+import AdjustmentsPanel from '../components/AdjustmentsPanel.jsx';
 
 const TARGET_DTE = 35;
 
@@ -233,21 +236,34 @@ export default function SimulatorPage({ watchlist, params }) {
     }
 
     const d = Math.min(daysForward, position.dte);
+    const summary = summarize(position);
+    const greeks = positionGreeks(position, position.spot, d, ivShift);
+
+    // Alerts, the unrealized P&L and the probability check are about the position you hold now,
+    // so they read today's greeks — never the what-if point the sliders have moved to.
+    const greeksNow = d === 0 && !ivShift ? greeks : positionGreeks(position, position.spot);
+    const reliability = probabilityReliability(position);
+    const unrealized = unrealizedPnl(position);
+    const earnings = watchlist.find((w) => w.symbol === chain.symbol)?.earnings ?? null;
 
     return {
       picked,
       position,
-      summary: summarize(position),
+      summary,
       daysForward: d,
+      reliability,
+      unrealized,
+      alerts: riskAlerts(position, { summary, greeks: greeksNow, unrealized, earnings, reliability }),
+      exposure: exposure(position, greeks, summary),
       curve: pnlCurve(position, { daysForward: d, ivShift }),
       // At today's price, not at the what-if price: this answers "what does waiting do", and
       // mixing a price move into it would make it answer two questions at once.
       decay: decayProfile(position, { ivShift }),
-      greeks: positionGreeks(position, position.spot, d, ivShift),
+      greeks,
       atSpot: pnlAt(position, position.spot, d, ivShift),
       grid: pnlGrid(position, { rows: 11, columns: 6, ivShift }),
     };
-  }, [chain, kind, strategy, by, targetDelta, strike, width, pricing, fill, quantity, daysForward, ivShift]);
+  }, [chain, kind, strategy, by, targetDelta, strike, width, pricing, fill, quantity, daysForward, ivShift, watchlist]);
 
   // Keep the address bar describing what is on screen, so the page can be bookmarked or shared.
   useEffect(() => {
@@ -552,7 +568,11 @@ export default function SimulatorPage({ watchlist, params }) {
       {position && (
         // Refetch keeps the frame: while a new chain loads, the old render stays, dimmed.
         <div className={loading > 0 ? 'sim-body stale' : 'sim-body'}>
+          <AtAGlance sim={sim} credit={credit} wantsAbove={wantsAbove} />
+
           <div className="sim-main">
+            <RiskAlerts alerts={sim.alerts} />
+
             <section className="panel chart-panel">
               <div className="chart-head">
                 <h2>{describe(position, chain)}</h2>
@@ -638,6 +658,31 @@ export default function SimulatorPage({ watchlist, params }) {
                 <Greek label="Gamma" value={signedNumber(sim.greeks.gamma, 3)} hint="delta change per $1" />
               </dl>
 
+              <h3 className="exposure-title">Exposure</h3>
+              <dl className="greeks exposure" aria-label="Exposure">
+                <Greek
+                  label="Behaves like"
+                  value={`${signedNumber(sim.exposure.shareEquivalent, 0)} sh`}
+                  hint={`${signed(sim.exposure.dollarDelta)} of ${chain.symbol}`}
+                />
+                <Greek
+                  label="If it rises 1%"
+                  value={signed(sim.exposure.upOnePct)}
+                  hint={`falls 1%: ${signed(sim.exposure.downOnePct)}`}
+                />
+                <Greek
+                  label="Typical day"
+                  value={`±${money(sim.exposure.oneDayMove)}`}
+                  hint={`a one-sigma day, ±${price(sim.exposure.daySigma)}`}
+                />
+                <Greek
+                  label="Theta a day"
+                  value={sim.exposure.thetaShare == null ? '—' : pct(sim.exposure.thetaShare, 1)}
+                  hint={credit ? 'of the credit' : 'of what was paid'}
+                />
+                <Greek label="Capital at risk" value={money(sim.exposure.capitalAtRisk)} hint="the max loss" />
+              </dl>
+
               <p className="muted small greeks-note">
                 {credit
                   ? 'A credit spread collects theta and is short vega: time passing helps, a jump in implied vol hurts.'
@@ -647,6 +692,8 @@ export default function SimulatorPage({ watchlist, params }) {
                   : `These are the values at ${projectedLabel}.`}
               </p>
             </section>
+
+            <AdjustmentsPanel position={position} chain={chain} expiryList={expiryList} symbol={chain.symbol} />
 
             {/* Time decay as its own view. The payoff chart above is P&L across PRICE on one day;
                 this is P&L across DAYS at one price, which is the shape a slider cannot show. */}
@@ -738,29 +785,8 @@ export default function SimulatorPage({ watchlist, params }) {
 
           <aside className="sim-side">
             <section className="panel">
-              <div className="tiles">
-                <Tile
-                  label="Max profit"
-                  value={s.maxProfit === null ? 'No cap' : money(s.maxProfit)}
-                  tone="pos"
-                  // A long put's maximum is the strike going to zero. True, and misleading as a
-                  // headline unless it says so — nobody is pricing SPY at $0.
-                  hint={position.kind === 'long_put' ? 'if it goes to zero' : undefined}
-                />
-                <Tile label="Max loss" value={money(-s.maxLoss)} tone="neg" />
-                {credit ? (
-                  <Tile label="Return on risk" value={pct(s.returnOnRisk)} />
-                ) : (
-                  <Tile label="Move to break even" value={movePct(s.breakEven, position.spot)} />
-                )}
-              </div>
-
-              {s.warnings.map((w) => (
-                <p key={w} className="warning small">
-                  {w}
-                </p>
-              ))}
-
+              {/* Max profit, max loss, break-even and win probability lead the page in the strip
+                  above; the pricing warnings are in the risk alerts. This panel keeps the detail. */}
               <dl className="facts">
                 <Fact
                   label={credit ? 'Credit' : 'Debit'}
@@ -773,29 +799,24 @@ export default function SimulatorPage({ watchlist, params }) {
                         : `${credit ? 'bid/ask' : 'the ask'} — mid would be ${price(Math.abs(s.netMid))}`
                   }
                 />
-                <Fact
-                  label="Break-even at expiry"
-                  value={price(s.breakEven)}
-                  hint={`${movePct(s.breakEven, position.spot)} from spot`}
-                />
+                {credit ? (
+                  <Fact label="Return on risk" value={pct(s.returnOnRisk)} hint="max profit ÷ max loss" />
+                ) : (
+                  <Fact label="Move to break even" value={movePct(s.breakEven, position.spot)} hint="from today’s price" />
+                )}
                 {/* Which side of a level the position needs is the one thing that mirrors between
                     a put spread and a call spread. The numbers already mirror; these words have to
                     as well, or the page states the opposite of what it just computed. */}
-                <Fact
-                  label="Win probability"
-                  value={pct(s.probProfit)}
-                  hint={`finishes ${wantsAbove ? 'above' : 'below'} break-even`}
-                />
                 {credit && (
                   <Fact
                     label="Keep the full credit"
-                    value={pct(s.probMaxProfit)}
+                    value={sim.reliability.reliable ? pct(s.probMaxProfit) : '—'}
                     hint={`finishes ${wantsAbove ? 'above' : 'below'} short strike`}
                   />
                 )}
                 <Fact
                   label={credit ? 'Lose the maximum' : 'Expires worthless'}
-                  value={pct(s.probMaxLoss)}
+                  value={sim.reliability.reliable ? pct(s.probMaxLoss) : '—'}
                   hint={
                     credit
                       ? `finishes ${wantsAbove ? 'below' : 'above'} long strike`
@@ -803,7 +824,11 @@ export default function SimulatorPage({ watchlist, params }) {
                   }
                 />
                 {credit && (
-                  <Fact label="Expected value" value={signed(s.expectedValue)} hint="two-outcome, like the screener" />
+                  <Fact
+                    label="Expected value"
+                    value={sim.reliability.reliable ? signed(s.expectedValue) : '—'}
+                    hint="two-outcome, like the screener"
+                  />
                 )}
                 <Fact
                   label="Expected move by expiry"
@@ -830,7 +855,22 @@ export default function SimulatorPage({ watchlist, params }) {
                 />
               </dl>
 
-              {sim.daysForward === 0 && !ivShift && sim.atSpot < 0 && (
+              {sim.unrealized && (
+                <dl className="facts">
+                  <Fact
+                    label="Unrealized, closing now"
+                    value={<span className={sim.unrealized.conservative >= 0 ? 'pos' : 'neg'}>{signed(sim.unrealized.conservative)}</span>}
+                    hint={`${credit ? 'buy back' : 'sell'} at ${price(Math.abs(sim.unrealized.closeCost))} — bid/ask`}
+                  />
+                  <Fact
+                    label="Unrealized at mid"
+                    value={signed(sim.unrealized.mid)}
+                    hint={`at ${price(Math.abs(sim.unrealized.closeCostMid))}`}
+                  />
+                </dl>
+              )}
+
+              {sim.daysForward === 0 && !ivShift && sim.atSpot < 0 && !sim.unrealized && (
                 <p className="muted small">
                   Negative on day one is expected: you {credit ? 'sold at the bid and bought at the ask' : 'paid the ask'},
                   and the position is marked at its model value in between.
@@ -850,14 +890,61 @@ export default function SimulatorPage({ watchlist, params }) {
   );
 }
 
-function Tile({ label, value, tone, hint }) {
+/**
+ * The numbers a trader checks first, in one row above everything: time left, the two extremes,
+ * where it breaks even, the odds, and what it is worth now against your fill.
+ *
+ * The probability is printed only when the data under it can carry it (see
+ * probabilityReliability), and the unrealized P&L only when there is a real fill to measure from
+ * — otherwise each tile says what is missing instead of showing a number that means nothing.
+ */
+function AtAGlance({ sim, credit, wantsAbove }) {
+  const { summary: s, position, reliability, unrealized } = sim;
   return (
-    <div className="tile">
-      <span className={`tile-value ${tone ?? ''}`}>{value}</span>
-      <span className="tile-label">
-        {label}
-        {hint && <span className="tile-hint">{hint}</span>}
-      </span>
+    <dl className="glance" aria-label="Position at a glance">
+      <GlanceTile label="Days to expiry" value={String(position.dte)} hint={shortDate(position.expiration)} />
+      <GlanceTile
+        label="Max profit"
+        value={s.maxProfit === null ? 'No cap' : money(s.maxProfit)}
+        // A long put's maximum is the strike going to zero. True, and misleading as a headline
+        // unless it says so — nobody is pricing SPY at $0.
+        hint={position.kind === 'long_put' ? 'if it goes to zero' : credit ? 'keep the whole credit' : 'no ceiling above break-even'}
+      />
+      <GlanceTile label="Max loss" value={money(s.maxLoss)} hint={credit ? 'width less the credit' : 'what was paid'} />
+      <GlanceTile label="Break-even" value={price(s.breakEven)} hint={`${movePct(s.breakEven, position.spot)} from ${price(position.spot)}`} />
+      <GlanceTile
+        label="Win probability"
+        value={reliability.reliable ? pct(s.probProfit, 0) : '—'}
+        hint={reliability.reliable ? `finishes ${wantsAbove ? 'above' : 'below'} break-even` : 'not shown — see the alerts'}
+      />
+      <GlanceTile
+        label="Unrealized P/L"
+        value={unrealized ? signed(unrealized.conservative) : '—'}
+        tone={unrealized ? (unrealized.conservative >= 0 ? 'pos' : 'neg') : undefined}
+        hint={
+          // A gain is measured against what there is to gain, a loss against what there is to
+          // lose — "−262% of max profit" is true and unreadable.
+          unrealized
+            ? unrealized.conservative >= 0 && unrealized.shareOfMaxProfit != null
+              ? `${pct(unrealized.shareOfMaxProfit, 0)} of max profit, closing now`
+              : unrealized.conservative < 0 && unrealized.shareOfMaxLoss != null
+                ? `${pct(unrealized.shareOfMaxLoss, 0)} of max loss, closing now`
+                : 'closing now at bid/ask'
+            : 'enter your fill to see it'
+        }
+      />
+    </dl>
+  );
+}
+
+function GlanceTile({ label, value, hint, tone }) {
+  return (
+    <div className="glance-tile">
+      <dt>{label}</dt>
+      <dd>
+        <span className={`glance-value ${tone ?? ''}`}>{value}</span>
+        {hint && <span className="glance-hint">{hint}</span>}
+      </dd>
     </div>
   );
 }

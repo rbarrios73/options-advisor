@@ -1282,3 +1282,49 @@ a.button-link {
 }
 a.button-link:hover { filter: brightness(1.08); }
 .tab.locked { display: inline-flex; align-items: center; white-space: nowrap; }
+
+/* --- Simulator: at a glance, risk alerts, exposure, adjustments ------------------------------- */
+/* The strip spans both columns of the simulator body, above the chart and the side panel. */
+.glance { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0; }
+@media (max-width: 1100px) { .glance { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .glance { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.glance-tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.glance-tile dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.glance-tile dd { margin: 4px 0 0; display: flex; flex-direction: column; gap: 2px; }
+.glance-value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.glance-hint { color: var(--muted); font-size: 11px; }
+
+/* Severity is the one place these status colours appear on the page, and each one always comes
+   with its word ("Act now", "Watch", "Note") and an icon — never the colour alone. */
+.risk-alerts { margin-bottom: 16px; }
+.alerts-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+.alert { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); border-left-width: 3px; }
+.alert p { margin: 0; }
+.alert-title { font-weight: 600; font-size: 13px; }
+.alert-sev { text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.06em; margin-right: 6px; }
+.alert-detail { color: var(--text-secondary); font-size: 13px; line-height: 1.45; margin-top: 2px !important; }
+.alert-icon { margin-top: 1px; }
+.alert.sev-critical { border-left-color: var(--bad); }
+.alert.sev-critical .alert-icon, .alert.sev-critical .alert-sev { color: var(--bad); }
+.alert.sev-warning { border-left-color: var(--warn); background: var(--warn-wash); }
+.alert.sev-warning .alert-icon, .alert.sev-warning .alert-sev { color: var(--warn); }
+.alert.sev-info { border-left-color: var(--line); }
+.alert.sev-info .alert-icon, .alert.sev-info .alert-sev { color: var(--muted); }
+.alerts-none { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; }
+.alerts-none .alert-icon { color: var(--good); }
+
+.exposure-title { margin: 14px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.greeks.exposure { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 760px) { .greeks.exposure { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.adjustments { margin-top: 16px; }
+table.adjust-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.adjust-table th, table.adjust-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.adjust-table thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+table.adjust-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.adjust-table tbody th { font-weight: 400; min-width: 220px; }
+.adjust-title { display: block; font-weight: 600; }
+.adjust-action { display: block; margin-top: 2px; }
+.adjust-load { margin: 12px 0 0; }
+.adjust-note { margin: 10px 0 0; }
+.nowrap { white-space: nowrap; }
