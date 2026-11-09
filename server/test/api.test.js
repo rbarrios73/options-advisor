@@ -136,6 +136,7 @@ test('writes, positions, the simulator’s chains and the AI need a session; hea
     ['/api/expirations?symbol=SPY', 'GET'],
     ['/api/chain?symbol=SPY&expiration=2026-10-23', 'GET'],
     ['/api/users', 'GET'],
+    ['/api/audit', 'GET'],
   ]) {
     const r = await anon(path, { method, body: method === 'GET' ? undefined : {} });
     assert.equal(r.status, 401, `${method} ${path}`);
@@ -1790,4 +1791,58 @@ test('the forecast route refuses a junk symbol rather than spending requests on 
 
   const r = await call('/api/forecast?symbol=' + encodeURIComponent('<script>'));
   assert.equal(r.status, 400);
+});
+
+test('the audit log records sign-ins, failures, sign-outs and admin changes — and only admins read it', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  const created = await admin('/api/users', { method: 'POST', body: { ...MEMBER, role: 'member' } });
+  assert.equal(created.status, 201);
+
+  const member = s.client();
+  assert.equal((await member.signIn({ email: MEMBER.email, password: 'wrong password here' })).status, 401);
+  await member.signIn(MEMBER);
+
+  // A member cannot read it.
+  assert.equal((await member('/api/audit')).status, 403);
+  await member('/api/logout', { method: 'POST' });
+
+  await admin(`/api/users/${created.body.user.id}`, { method: 'PATCH', body: { disabled: true } });
+
+  const log = await admin('/api/audit');
+  assert.equal(log.status, 200);
+  assert.deepEqual(
+    log.body.entries.map((e) => `${e.event}:${e.email}`),
+    [
+      `user_updated:${MEMBER.email}`,
+      `sign_out:${MEMBER.email}`,
+      `sign_in:${MEMBER.email}`,
+      `sign_in_failed:${MEMBER.email}`,
+      `user_created:${MEMBER.email}`,
+      `sign_in:${ADMIN.email}`,
+    ],
+  );
+  const update = log.body.entries[0];
+  assert.equal(update.detail, 'disabled');
+  assert.equal(update.actorEmail, ADMIN.email, 'who made the change is kept');
+  assert.equal(JSON.stringify(log.body).includes('wrong password here'), false, 'no password is ever logged');
+
+  // The admin is signed in now; the member signed out.
+  assert.deepEqual(log.body.online.map((o) => o.email), [ADMIN.email]);
+  assert.deepEqual(log.body.failures.map((f) => [f.email, f.attempts]), [[MEMBER.email, 1]]);
+});
+
+test('a deleted account’s history survives it', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const admin = s.client();
+  await admin.signIn(ADMIN);
+  const { body } = await admin('/api/users', { method: 'POST', body: { ...MEMBER } });
+  await admin(`/api/users/${body.user.id}`, { method: 'DELETE' });
+
+  const log = await admin(`/api/audit?user=${body.user.id}`);
+  assert.deepEqual(log.body.entries.map((e) => e.event), ['user_deleted', 'user_created']);
 });

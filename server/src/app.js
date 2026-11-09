@@ -16,6 +16,7 @@ import {
   sessionUser,
 } from './auth.js';
 import { migrate } from './db.js';
+import { AUDIT_EVENTS, clientOf, createAuditLog, describeAgent } from './audit.js';
 import { UserError, createUserStore, passwordProblem } from './users.js';
 import { createProvider } from './providers/index.js';
 import { createDbStore, createFileStore, guestState } from './store.js';
@@ -79,6 +80,9 @@ export function createApp({ config, db = null }) {
   const accounts = Boolean(db);
 
   const users = accounts ? createUserStore(db, { sessionTtlDays: config.sessionTtlDays }) : null;
+  // Who signed in, when, from where; and what administrators changed. See audit.js.
+  const audit = accounts ? createAuditLog(db, { retentionDays: config.auditRetentionDays ?? 180 }) : null;
+  const actorOf = (req) => ({ actorId: req.user?.id ?? null, actorEmail: req.user?.email ?? null });
   const store = accounts ? createDbStore(db) : createFileStore(config.dataFile);
 
   // Without accounts, the whole app sits behind one shared password.
@@ -195,10 +199,15 @@ export function createApp({ config, db = null }) {
       wrap(async (req, res) => {
         const user = await users.authenticate(req.body?.email, req.body?.password);
         // One message for every kind of failure: saying which part was wrong tells an attacker
-        // whose address has an account here.
-        if (!user) return res.status(401).json({ error: 'Wrong email or password.' });
+        // whose address has an account here. The log keeps the address that was typed, which
+        // is what an administrator needs to see a guessing attack — never the password.
+        if (!user) {
+          await audit.record({ event: 'sign_in_failed', email: String(req.body?.email ?? '').trim().toLowerCase(), ...clientOf(req) });
+          return res.status(401).json({ error: 'Wrong email or password.' });
+        }
 
-        const { token, expiresAt } = await users.startSession(user.id);
+        const { token, expiresAt } = await users.startSession(user.id, clientOf(req));
+        await audit.record({ event: 'sign_in', userId: user.id, email: user.email, ...clientOf(req) });
         res.set('Set-Cookie', sessionCookie(token, { expiresAt, secure: config.production }));
         res.json({ user });
       }),
@@ -243,7 +252,8 @@ export function createApp({ config, db = null }) {
 
           // Signed in on the spot: a form that creates an account and then asks you to log in is
           // a form that makes you type the same password twice for no reason.
-          const { token, expiresAt } = await users.startSession(user.id);
+          const { token, expiresAt } = await users.startSession(user.id, clientOf(req));
+          await audit.record({ event: 'sign_up', userId: user.id, email: user.email, ...clientOf(req) });
           res.set('Set-Cookie', sessionCookie(token, { expiresAt, secure: config.production }));
           res.json({ user });
         }),
@@ -253,7 +263,8 @@ export function createApp({ config, db = null }) {
     app.post(
       '/api/logout',
       wrap(async (req, res) => {
-        await users.endSession(readCookie(req, SESSION_COOKIE));
+        const who = await users.endSession(readCookie(req, SESSION_COOKIE));
+        if (who) await audit.record({ event: 'sign_out', userId: who.id, email: who.email, ...clientOf(req) });
         res.set('Set-Cookie', clearedCookie({ secure: config.production }));
         res.json({ ok: true });
       }),
@@ -272,10 +283,11 @@ export function createApp({ config, db = null }) {
         if (problem) return res.status(400).json({ error: problem });
 
         await users.setPassword(req.user.id, req.body.newPassword);
+        await audit.record({ event: 'password_changed', userId: req.user.id, email: req.user.email, ...clientOf(req) });
 
         // setPassword ends every session, including this one — sign the browser back in rather
         // than bouncing someone to the login screen for doing the right thing.
-        const { token, expiresAt } = await users.startSession(req.user.id);
+        const { token, expiresAt } = await users.startSession(req.user.id, clientOf(req));
         res.set('Set-Cookie', sessionCookie(token, { expiresAt, secure: config.production }));
         res.json({ ok: true });
       }),
@@ -294,6 +306,7 @@ export function createApp({ config, db = null }) {
           password: req.body?.password,
           role: req.body?.role === 'admin' ? 'admin' : 'member',
         });
+        await audit.record({ event: 'user_created', userId: user.id, email: user.email, ...actorOf(req), ...clientOf(req), detail: `role: ${user.role}` });
         res.status(201).json({ user });
       }),
     );
@@ -304,8 +317,10 @@ export function createApp({ config, db = null }) {
       wrap(async (req, res) => {
         const { id } = req.params;
 
+        const target = await users.findById(id);
         if (req.body?.password !== undefined) {
           await users.setPassword(id, req.body.password);
+          await audit.record({ event: 'password_reset', userId: id, email: target?.email, ...actorOf(req), ...clientOf(req) });
         }
 
         // An admin demoting or disabling themselves is how an app ends up with nobody who can
@@ -314,10 +329,21 @@ export function createApp({ config, db = null }) {
           return res.status(409).json({ error: 'You cannot demote or disable your own account.' });
         }
 
-        const changed =
-          req.body?.role !== undefined || req.body?.disabled !== undefined
-            ? await users.update(id, { role: req.body.role, disabled: req.body.disabled })
-            : await users.findById(id);
+        const changing = req.body?.role !== undefined || req.body?.disabled !== undefined;
+        const changed = changing
+          ? await users.update(id, { role: req.body.role, disabled: req.body.disabled })
+          : await users.findById(id);
+
+        if (changing && target) {
+          const what = [];
+          if (req.body.role !== undefined && req.body.role !== target.role) what.push(`role: ${target.role} → ${changed.role}`);
+          if (req.body.disabled !== undefined && Boolean(req.body.disabled) !== Boolean(target.disabled)) {
+            what.push(changed.disabled ? 'disabled' : 're-enabled');
+          }
+          if (what.length) {
+            await audit.record({ event: 'user_updated', userId: id, email: target.email, ...actorOf(req), ...clientOf(req), detail: what.join(', ') });
+          }
+        }
 
         res.json({ user: changed });
       }),
@@ -330,8 +356,39 @@ export function createApp({ config, db = null }) {
         if (req.params.id === req.user.id) {
           return res.status(409).json({ error: 'You cannot delete your own account.' });
         }
+        const target = await users.findById(req.params.id);
         await users.remove(req.params.id);
+        if (target) {
+          await audit.record({ event: 'user_deleted', userId: target.id, email: target.email, ...actorOf(req), ...clientOf(req) });
+        }
         res.json({ ok: true });
+      }),
+    );
+
+    // --- the audit log, administrators only ------------------------------------------------
+
+    app.get(
+      '/api/audit',
+      requireAdmin,
+      wrap(async (req, res) => {
+        const page = await audit.list({
+          limit: req.query.limit,
+          before: req.query.before,
+          event: req.query.event,
+          userId: req.query.user,
+        });
+        // The first page also says who is in the app now and what has been failing, so the page
+        // opens on the two questions an administrator actually comes with.
+        const first = !req.query.before;
+        res.json({
+          ...page,
+          events: AUDIT_EVENTS,
+          online: first
+            ? (await users.activeSessions({ minutes: 15 })).map(({ userAgent, ...s }) => ({ ...s, agent: describeAgent(userAgent) }))
+            : undefined,
+          failures: first ? await audit.recentFailures({ hours: 24 }) : undefined,
+          retentionDays: config.auditRetentionDays ?? 180,
+        });
       }),
     );
   }
@@ -1088,7 +1145,7 @@ app.get(
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'No such endpoint.' }));
 
-  return { app, accounts, db, users, store, provider, scanner, briefer, hasBuiltUi };
+  return { app, accounts, db, users, audit, store, provider, scanner, briefer, hasBuiltUi };
 }
 
 /** Flags any candidate whose expiry sits beyond a hand-entered earnings date. */
@@ -1119,6 +1176,9 @@ export async function prepare({ config, db, users, accounts }) {
   await migrate(db);
   const removed = await users.purgeExpiredSessions();
   if (removed) console.log(`Cleared ${removed} expired session(s).`);
+
+  const pruned = await createAuditLog(db, { retentionDays: config.auditRetentionDays ?? 180 }).prune();
+  if (pruned) console.log(`Pruned ${pruned} audit log entr${pruned === 1 ? 'y' : 'ies'} past ${config.auditRetentionDays ?? 180} days.`);
 
   if (!config.adminEmail || !config.adminPassword) {
     if ((await users.count()) === 0) {

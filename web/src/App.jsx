@@ -15,6 +15,7 @@ import DividendsPage from './pages/DividendsPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
+import AuditPage from './pages/AuditPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
 
 export default function App() {
@@ -312,10 +313,12 @@ export default function App() {
 
       {error && <p className="error">{error}</p>}
 
-      {!settings && page !== 'users' && page !== 'account' ? (
+      {!settings && page !== 'users' && page !== 'account' && page !== 'audit' ? (
         <p className="muted">Loading…</p>
       ) : page === 'users' ? (
         <UsersPage me={user} />
+      ) : page === 'audit' ? (
+        <AuditPage />
       ) : page === 'account' ? (
         <AccountPage me={user} />
       ) : page === 'watchlist' ? (

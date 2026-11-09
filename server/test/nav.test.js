@@ -21,7 +21,7 @@ test('accounts: admins get Users, members do not, everyone gets Account', () => 
   const admin = { accounts: true, user: { id: '1', role: 'admin' } };
   const member = { accounts: true, user: { id: '2', role: 'member' } };
 
-  assert.deepEqual(names(admin), ['screener', 'watchlist', 'positions', 'dividends', 'ticker', 'simulator', 'users', 'account']);
+  assert.deepEqual(names(admin), ['screener', 'watchlist', 'positions', 'dividends', 'ticker', 'simulator', 'users', 'audit', 'account']);
   assert.deepEqual(names(member), ['screener', 'watchlist', 'positions', 'dividends', 'ticker', 'simulator', 'account']);
 });
 

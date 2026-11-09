@@ -44,6 +44,8 @@ export const config = {
   pgSsl: process.env.PGSSL ?? '', // 'require' | 'disable' | '' (decide from the host)
 
   sessionTtlDays: Number(process.env.SESSION_TTL_DAYS ?? 30),
+  // How long the audit log keeps sign-ins and account changes before pruning them on start-up.
+  auditRetentionDays: Math.max(7, Number(process.env.AUDIT_RETENTION_DAYS ?? 180) || 180),
 
   // The first administrator. Created on boot if that address has no account yet; an existing
   // account is left alone unless ADMIN_RESET=true, so a redeploy does not silently reset a

@@ -17,6 +17,7 @@ export const PAGES = {
   // single-user and calls that lone user an admin, so adminOnly alone would show a Users tab
   // pointing at routes the server never registered — "No such endpoint." on the first click.
   users: { label: 'Users', adminOnly: true, accountsOnly: true },
+  audit: { label: 'Audit', adminOnly: true, accountsOnly: true },
   account: { label: 'Account', accountsOnly: true, signedInOnly: true },
 };
 

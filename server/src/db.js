@@ -84,6 +84,31 @@ export async function migrate(db) {
   await db.query(`CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions (user_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS sessions_expires_at ON sessions (expires_at)`);
 
+  // Where and when each session was last used, for the Audit log page's "signed in now". Added
+  // after the table shipped, so they arrive by ALTER; older sessions simply show no address.
+  await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
+  await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT`);
+  await db.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT`);
+
+  // The audit log. No foreign key to users, on purpose: an account's history has to outlive the
+  // account, or deleting one would erase the record of who deleted it. See audit.js.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+      event       TEXT NOT NULL,
+      user_id     TEXT,
+      email       TEXT,
+      actor_id    TEXT,
+      actor_email TEXT,
+      ip          TEXT,
+      user_agent  TEXT,
+      detail      TEXT
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_log_user ON audit_log (user_id, id)`);
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS settings (
       user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

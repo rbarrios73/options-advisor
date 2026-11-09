@@ -204,32 +204,73 @@ export function createUserStore(db, { sessionTtlDays = 30 } = {}) {
       return publicUser(row);
     },
 
-    /** Returns the raw token for the cookie; only its hash is stored. */
-    async startSession(userId) {
+    /**
+     * Returns the raw token for the cookie; only its hash is stored. The address and browser it
+     * started from are kept with it, for the Audit log page's list of who is signed in.
+     */
+    async startSession(userId, { ip = null, userAgent = null } = {}) {
       const token = randomBytes(32).toString('base64url');
       const expiresAt = new Date(Date.now() + sessionTtlDays * 86_400_000);
 
-      await db.query(`INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)`, [
-        hashToken(token),
-        userId,
-        expiresAt,
-      ]);
+      await db.query(
+        `INSERT INTO sessions (id, user_id, expires_at, last_seen_at, ip, user_agent) VALUES ($1, $2, $3, now(), $4, $5)`,
+        [hashToken(token), userId, expiresAt, ip, userAgent],
+      );
       return { token, expiresAt };
     },
 
     async userForToken(token) {
       if (!token) return null;
 
+      const id = hashToken(token);
       const { rows } = await db.query(
         `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.id = $1 AND s.expires_at > now() AND u.disabled = FALSE`,
-        [hashToken(token)],
+        [id],
       );
-      return publicUser(rows[0]) ?? null;
+      const user = publicUser(rows[0]) ?? null;
+
+      // When it was last used. At most once a minute per session, so a page that makes ten
+      // requests does not make ten writes; "signed in now" does not need second precision.
+      if (user) {
+        await db.query(
+          `UPDATE sessions SET last_seen_at = now()
+           WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')`,
+          [id],
+        );
+      }
+      return user;
     },
 
+    /** Ends one session. Returns whose it was, so signing out can be logged against the account. */
     async endSession(token) {
-      if (token) await db.query(`DELETE FROM sessions WHERE id = $1`, [hashToken(token)]);
+      if (!token) return null;
+      const { rows } = await db.query(
+        `DELETE FROM sessions s USING users u WHERE s.id = $1 AND u.id = s.user_id RETURNING u.id, u.email`,
+        [hashToken(token)],
+      );
+      return rows[0] ? { id: rows[0].id, email: rows[0].email } : null;
+    },
+
+    /**
+     * Sessions used in the last `minutes`, newest first — who is in the app right now, one row per
+     * browser. A session that has not been touched since is still valid; it is just not "now".
+     */
+    async activeSessions({ minutes = 15 } = {}) {
+      const { rows } = await db.query(
+        `SELECT u.id AS "userId", u.email, u.role, s.created_at AS "since", s.last_seen_at AS "lastSeen",
+                s.ip, s.user_agent AS "userAgent"
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.expires_at > now() AND u.disabled = FALSE
+           AND s.last_seen_at > now() - make_interval(mins => $1)
+         ORDER BY s.last_seen_at DESC LIMIT 100`,
+        [minutes],
+      );
+      return rows.map((r) => ({
+        ...r,
+        since: new Date(r.since).toISOString(),
+        lastSeen: new Date(r.lastSeen).toISOString(),
+      }));
     },
 
     /** Housekeeping: expired rows are dead weight and are never read. */

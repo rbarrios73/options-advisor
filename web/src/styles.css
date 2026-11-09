@@ -1337,3 +1337,25 @@ table.adjust-table tbody th { font-weight: 400; min-width: 220px; }
 .edit-settlement { padding-top: 10px; border-top: 1px dashed var(--line); }
 .edit-form .edit-reopen { flex-basis: 100%; }
 .edit-form .form-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* --- Audit log (admins) ------------------------------------------------------------------------ */
+.audit-page { display: grid; gap: 16px; }
+.audit-refresh, .audit-filter { margin-left: auto; }
+table.audit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.audit-table th, table.audit-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.audit-table thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+table.audit-table tbody th { font-weight: 600; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.audit-tag { display: inline-flex; align-items: center; gap: 6px; }
+.audit-tag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.audit-tag.tag-fail { color: var(--bad); font-weight: 600; }
+.audit-tag.tag-fail::before { background: var(--bad); }
+.audit-tag.tag-admin::before { background: var(--accent); }
+.audit-failure-list { margin: 4px 0 8px; padding-left: 18px; }
+.audit-failure-list li { margin: 2px 0; }
+/* An administrator has nine tabs. Below 1440px they and the account controls only share one line
+   with a little less padding — otherwise the email and Sign out wrap under the tabs. */
+@media (max-width: 1440px) {
+  .topbar { gap: 20px; }
+  .tab { padding-left: 11px; padding-right: 11px; }
+}

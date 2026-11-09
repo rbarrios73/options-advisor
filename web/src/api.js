@@ -95,6 +95,15 @@ export const api = {
   /** Implied vol at a few expiries and realised vol, for the Ticker page's expected range. */
   forecast: (symbol) => fetch(`/api/forecast?symbol=${encodeURIComponent(symbol)}`).then(json),
 
+  /** The audit log, a page at a time (admins only). `before` is the last id already shown. */
+  audit: ({ before, event, user } = {}) => {
+    const q = new URLSearchParams();
+    if (before) q.set('before', before);
+    if (event) q.set('event', event);
+    if (user) q.set('user', user);
+    return fetch(`/api/audit${q.size ? `?${q}` : ''}`).then(json);
+  },
+
   /** How far your running scan has got: { running, done, total, current, startedAt }. */
   scanProgress: () => fetch('/api/scan/progress').then(json),
 
