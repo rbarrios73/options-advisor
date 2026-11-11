@@ -22,6 +22,11 @@ export class AdvisorError extends Error {
   }
 }
 
+/** Added to the system prompt when the reader's language is Spanish. */
+const SPANISH_REPLY =
+  'Write your answer in Spanish (neutral Latin-American, informal "tú"). Keep ticker symbols, numbers, dates and ' +
+  'the option terms traders use in English — strike, put, call, spread, bid, ask, delta, theta — exactly as they are.';
+
 /**
  * @param {object} options
  *   apiKey      ANTHROPIC_API_KEY. Without it the advisor is off and this returns null.
@@ -110,7 +115,7 @@ export function createAdvisor({ apiKey, model, maxTokens = 900, fetchImpl = fetc
      * numbers the model reads are then the ones this server computed, not numbers a client said
      * it had. The question is the only thing that comes from outside.
      */
-    async ask({ question, result }) {
+    async ask({ question, result, lang }) {
       const clean = String(question ?? '').trim().slice(0, MAX_QUESTION);
       if (!clean) throw new AdvisorError('Ask a question first.', 400);
 
@@ -120,7 +125,8 @@ export function createAdvisor({ apiKey, model, maxTokens = 900, fetchImpl = fetc
       }
 
       const { text, model: used, truncated, usage } = await call({
-        system: SYSTEM_PROMPT,
+        // The rules stay in English, where they were written and tested; only the reply changes.
+        system: lang === 'es' ? `${SYSTEM_PROMPT}\n\n${SPANISH_REPLY}` : SYSTEM_PROMPT,
         // The table first, the question last: the question is the only part that varies, and it
         // reads as a question about what came before rather than as a new topic.
         user: `Here is my screener's output.\n\n<scan>\n${digest}\n</scan>\n\nMy question: ${clean}`,

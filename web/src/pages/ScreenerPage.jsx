@@ -7,6 +7,7 @@ import ResultsTable from '../components/ResultsTable.jsx';
 import AskPanel from '../components/AskPanel.jsx';
 import { STALE_AFTER_MS, ageOf } from '../lastScan.js';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
  * does not throw away a scan — and does not spend another round of provider requests.
@@ -24,18 +25,14 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
 
       {guest && (
         <p className="notice small guest-note">
-          You are scanning the starter watchlist with the default filters.{' '}
-          <a href="#/signup">Create a free account</a> or <a href="#/signin">sign in</a> to scan your
-          own lists, tune the filters, and open trades in the Simulator.
+          {tr('You are scanning the starter watchlist with the default filters.')}{' '}
+          <a href="#/signup">{tr('Create a free account')}</a>{tr(' or ')}<a href="#/signin">{tr('sign in')}</a>{tr(' to scan your own lists, tune the filters, and open trades in the Simulator.')}
         </p>
       )}
 
       <div className="page-head">
         <p className="muted small">
-          Ranks the structures your filters allow, using one snapshot of the chain. It is a screener,
-          not advice — it has never seen your account, your other positions, or anything about the
-          company beyond its option prices. Check every number against your broker before acting on
-          it.
+          {tr('Ranks the structures your filters allow, using one snapshot of the chain. It is a screener, not advice — it has never seen your account, your other positions, or anything about the company beyond its option prices. Check every number against your broker before acting on it.')}
         </p>
 
         <div className="actions">
@@ -44,7 +41,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
               will this scan?" rather than two. */}
           {settings.watchlists?.length > 1 && (
             <label className="scan-scope">
-              <span className="muted small">Scanning</span>
+              <span className="muted small">{tr('Scanning')}</span>
               <select
                 value={settings.activeWatchlistId ?? ''}
                 disabled={scanning}
@@ -60,15 +57,15 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
           )}
 
           <button className="primary" onClick={() => run()} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Scan'}
+            {scanning ? tr('Scanning…') : tr('Scan')}
           </button>
           {/* Bypassing the cache spends the shared rate limit, so it is an account feature. */}
           {!guest && (
-            <button onClick={() => run({ fresh: true })} disabled={scanning} title="Ignore cached chains">
-              Refresh data
+            <button onClick={() => run({ fresh: true })} disabled={scanning} title={tr('Ignore cached chains')}>
+              {tr('Refresh data')}
             </button>
           )}
-          <button onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide filters' : 'Filters'}</button>
+          <button onClick={() => setShowFilters((v) => !v)}>{showFilters ? tr('Hide filters') : tr('Filters')}</button>
         </div>
       </div>
 
@@ -80,7 +77,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
             // A guest sees the filters the scan uses, but cannot change them: there is no account
             // to save them to, and the server scans a guest on the defaults whatever is sent.
             <fieldset className="plain-fieldset" disabled={guest}>
-              {guest && <p className="muted small">The default filters. Sign in to tune your own.</p>}
+              {guest && <p className="muted small">{tr('The default filters. Sign in to tune your own.')}</p>}
               <Filters
                 filters={settings.filters}
                 weights={settings.weights}
@@ -91,8 +88,8 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
           )}
 
           <p className="muted small provider">
-            Data: {settings.provider}
-            {settings.provider === 'mock' && ' — synthetic chains, for checking the app works'}
+            {tr('Data: ')}{settings.provider}
+            {settings.provider === 'mock' && tr(' — synthetic chains, for checking the app works')}
           </p>
         </aside>
 
@@ -101,8 +98,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
 
           {!result && !scanning && (
             <p className="muted">
-              Press Scan to look at today&rsquo;s chains. The first scan of the day fetches every chain
-              fresh and takes about a minute; later ones reuse what it fetched.
+              {tr('Press Scan to look at today’s chains. The first scan of the day fetches every chain fresh and takes about a minute; later ones reuse what it fetched.')}
             </p>
           )}
 
@@ -112,8 +108,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
             <>
               <div className="summary">
                 <span>
-                  <strong>{result.candidates.length}</strong> shown of {result.totalCandidates} that
-                  passed the filters
+                  <strong>{result.candidates.length}</strong>{tr(' shown of ')}{result.totalCandidates}{tr(' that passed the filters')}
                 </span>
                 <span className="muted">
                   {result.symbols.map((s) => `${s.symbol} ${s.spot?.toFixed(2)}`).join('  ·  ')}
@@ -136,8 +131,7 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
 
               {result.candidates.length === 0 ? (
                 <p className="muted">
-                  Nothing passed. The filters are the usual culprit — try a lower win probability or
-                  a lower return on risk; on a quiet day nothing pays enough to clear both.
+                  {tr('Nothing passed. The filters are the usual culprit — try a lower win probability or a lower return on risk; on a quiet day nothing pays enough to clear both.')}
                 </p>
               ) : (
                 <div className="table-wrap">
@@ -167,18 +161,17 @@ function ScanProgress({ progress }) {
     <div className="scan-progress panel" role="status" aria-live="polite">
       <div className="scan-progress-line">
         <strong>
-          {progress?.current ? `Fetching ${progress.current}` : 'Starting the scan'}
+          {progress?.current ? tr('Fetching {0}', [progress.current]) : tr('Starting the scan')}
         </strong>
         <span className="muted small">
-          {total > 0 && `${done} of ${total} symbols · `}
+          {total > 0 && tr('{0} of {1} symbols · ', [done, total])}
           {formatElapsed(elapsed)}
         </span>
       </div>
-      <progress max={total || 1} value={total ? done : undefined} aria-label="Scan progress" />
+      <progress max={total || 1} value={total ? done : undefined} aria-label={tr('Scan progress')} />
       {elapsed >= 8 && (
         <p className="muted small">
-          A first scan fetches every chain fresh, which is about a minute on a cold cache. Later scans
-          reuse it and take seconds.
+          {tr('A first scan fetches every chain fresh, which is about a minute on a cold cache. Later scans reuse it and take seconds.')}
         </p>
       )}
     </div>
@@ -200,9 +193,9 @@ function StaleNotice({ result, onScan }) {
   if (!stale) {
     return (
       <p className="muted small scan-stale">
-        Your last scan, from {scanTime(result.generatedAt)} ({ageOf(result.generatedAt)}).{' '}
+        {tr('Your last scan, from ')}{scanTime(result.generatedAt)} ({ageOf(result.generatedAt)}).{' '}
         <button type="button" className="link-button" onClick={onScan}>
-          Scan again
+          {tr('Scan again')}
         </button>
       </p>
     );
@@ -210,10 +203,9 @@ function StaleNotice({ result, onScan }) {
 
   return (
     <p className="warning small scan-stale">
-      Showing the scan from {scanTime(result.generatedAt)} ({ageOf(result.generatedAt)}). Prices
-      have moved since — scan again before acting on any of it.{' '}
+      {tr('Showing the scan from ')}{scanTime(result.generatedAt)} ({ageOf(result.generatedAt)}{tr('). Prices have moved since — scan again before acting on any of it.')}{' '}
       <button type="button" className="link-button" onClick={onScan}>
-        Scan now
+        {tr('Scan now')}
       </button>
     </p>
   );
@@ -238,6 +230,6 @@ function scanTime(iso) {
   const when = new Date(iso);
   const today = new Date().toDateString() === when.toDateString();
   return today
-    ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    ? when.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' })
+    : when.toLocaleString(dateLocale(), { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }

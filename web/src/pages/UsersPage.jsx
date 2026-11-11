@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { api } from '../api.js';
 
+import { tr } from '../i18n.js';
 /**
  * Account administration. Admins only — the server enforces that too, which is the enforcement
  * that counts; hiding the tab is a courtesy, not a control.
@@ -49,7 +50,7 @@ export default function UsersPage({ me }) {
     event.preventDefault();
     run(
       () => api.createUser({ email, password, role }),
-      `Added ${email.trim().toLowerCase()}. Tell them the password you just set — it is not shown again.`,
+      tr('Added {0}. Tell them the password you just set — it is not shown again.', [email.trim().toLowerCase()]),
     ).then(() => {
       setEmail('');
       setPassword('');
@@ -58,42 +59,40 @@ export default function UsersPage({ me }) {
   };
 
   const resetPassword = (user) => {
-    const next = window.prompt(`New password for ${user.email} (at least 10 characters):`);
+    const next = window.prompt(tr('New password for {0} (at least 10 characters):', [user.email]));
     if (!next) return;
     run(
       () => api.updateUser(user.id, { password: next }),
-      `Password set for ${user.email}. They have been signed out everywhere and will need the new one.`,
+      tr('Password set for {0}. They have been signed out everywhere and will need the new one.', [user.email]),
     );
   };
 
   const remove = (user) => {
     const sure = window.confirm(
-      `Delete ${user.email}? Their watchlist and saved filters go with them. This cannot be undone.`,
+      tr('Delete {0}? Their watchlist and saved filters go with them. This cannot be undone.', [user.email]),
     );
-    if (sure) run(() => api.deleteUser(user.id), `Deleted ${user.email}.`);
+    if (sure) run(() => api.deleteUser(user.id), tr('Deleted {0}.', [user.email]));
   };
 
   return (
     <div className="users-page">
       <p className="muted small page-intro">
-        Everyone signed in here keeps their own watchlist, filters and saved settings. They all
-        share one market-data connection, so the rate limit is shared too — scans by one person
-        use up the same allowance as scans by another.
+        {tr('Everyone signed in here keeps their own watchlist, filters and saved settings. They all share one market-data connection, so the rate limit is shared too — scans by one person use up the same allowance as scans by another.')}
       </p>
 
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice">{notice}</p>}
 
       <section className="panel">
-        <h2>Add someone</h2>
+        <h2>{tr('Add someone')}</h2>
         <form className="controls" onSubmit={add}>
           <label className="control">
-            <span>Email</span>
+            <span>{tr('Email')}</span>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-email" />
           </label>
 
           <label className="control">
-            <span>Password</span>
+            <span>{tr('Password')}</span>
             <input
               type="text"
               value={password}
@@ -101,41 +100,41 @@ export default function UsersPage({ me }) {
               minLength={10}
               required
               className="w-email"
-              placeholder="at least 10 characters"
+              placeholder={tr('at least 10 characters')}
               // Not a password field: you are setting this for somebody else and have to read it
               // back to them. Hiding it behind dots would only invite a typo.
             />
           </label>
 
           <label className="control">
-            <span>Role</span>
+            <span>{tr('Role')}</span>
             <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="member">Member</option>
-              <option value="admin">Admin — can manage users</option>
+              <option value="member">{tr('Member')}</option>
+              <option value="admin">{tr('Admin — can manage users')}</option>
             </select>
           </label>
 
           <button className="primary" type="submit" disabled={busy}>
-            Add user
+            {tr('Add user')}
           </button>
         </form>
       </section>
 
       <section className="panel">
-        <h2>Accounts</h2>
+        <h2>{tr('Accounts')}</h2>
 
-        {!users && <p className="muted">Loading…</p>}
+        {!users && <p className="muted">{tr('Loading…')}</p>}
 
         {users && (
           <div className="scroll-x">
             <table className="legs users-table">
               <thead>
                 <tr>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Added</th>
-                  <th>Last signed in</th>
+                  <th>{tr('Email')}</th>
+                  <th>{tr('Role')}</th>
+                  <th>{tr('Status')}</th>
+                  <th>{tr('Added')}</th>
+                  <th>{tr('Last signed in')}</th>
                   <th />
                 </tr>
               </thead>
@@ -146,35 +145,35 @@ export default function UsersPage({ me }) {
                     <tr key={user.id}>
                       <td>
                         {user.email}
-                        {self && <span className="tag">you</span>}
+                        {self && <span className="tag">{tr('you')}</span>}
                       </td>
                       <td>
                         <select
                           value={user.role}
                           disabled={busy || self}
-                          title={self ? 'You cannot change your own role' : undefined}
+                          title={self ? tr('You cannot change your own role') : undefined}
                           onChange={(e) => run(() => api.updateUser(user.id, { role: e.target.value }))}
                         >
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
+                          <option value="member">{tr('Member')}</option>
+                          <option value="admin">{tr('Admin')}</option>
                         </select>
                       </td>
-                      <td>{user.disabled ? <span className="tag warn">disabled</span> : 'active'}</td>
+                      <td>{user.disabled ? <span className="tag warn">{tr('disabled')}</span> : tr('active')}</td>
                       <td>{formatDate(user.createdAt)}</td>
-                      <td>{user.lastLoginAt ? formatDate(user.lastLoginAt) : 'never'}</td>
+                      <td>{user.lastLoginAt ? formatDate(user.lastLoginAt) : tr('never')}</td>
                       <td className="row-actions">
                         <button type="button" disabled={busy} onClick={() => resetPassword(user)}>
-                          Set password
+                          {tr('Set password')}
                         </button>
                         <button
                           type="button"
                           disabled={busy || self}
                           onClick={() => run(() => api.updateUser(user.id, { disabled: !user.disabled }))}
                         >
-                          {user.disabled ? 'Enable' : 'Disable'}
+                          {user.disabled ? tr('Enable') : tr('Disable')}
                         </button>
                         <button type="button" disabled={busy || self} onClick={() => remove(user)}>
-                          Delete
+                          {tr('Delete')}
                         </button>
                       </td>
                     </tr>
@@ -186,9 +185,7 @@ export default function UsersPage({ me }) {
         )}
 
         <p className="muted small">
-          Disabling someone keeps their watchlist and ends their sessions straight away; deleting
-          removes both. The app always keeps at least one enabled administrator, so the last one
-          cannot be deleted, demoted or disabled — including by themselves.
+          {tr('Disabling someone keeps their watchlist and ends their sessions straight away; deleting removes both. The app always keeps at least one enabled administrator, so the last one cannot be deleted, demoted or disabled — including by themselves.')}
         </p>
       </section>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { api } from '../api.js';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * Who is using the app, and what has happened to its accounts. Administrators only.
  *
@@ -39,38 +40,38 @@ export default function AuditPage() {
   }, [event]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !data) return <p className="error">{error}</p>;
-  if (!data) return <p className="muted">Loading the audit log…</p>;
+  if (!data) return <p className="muted">{tr('Loading the audit log…')}</p>;
 
   return (
     <div className="audit-page">
       <section className="panel" aria-labelledby="online-title">
         <div className="chart-head">
-          <h2 id="online-title">Signed in now</h2>
-          <span className="muted small">active in the last 15 minutes · one row per browser</span>
+          <h2 id="online-title">{tr('Signed in now')}</h2>
+          <span className="muted small">{tr('active in the last 15 minutes · one row per browser')}</span>
           <button type="button" className="audit-refresh" onClick={() => load()} disabled={loading}>
-            {loading ? 'Refreshing…' : 'Refresh'}
+            {loading ? tr('Refreshing…') : tr('Refresh')}
           </button>
         </div>
         {data.online.length === 0 ? (
-          <p className="muted small">Nobody else is using the app right now.</p>
+          <p className="muted small">{tr('Nobody else is using the app right now.')}</p>
         ) : (
           <div className="scroll-x">
             <table className="audit-table">
               <thead>
                 <tr>
-                  <th scope="col">Account</th>
-                  <th scope="col">Role</th>
-                  <th scope="col">Signed in</th>
-                  <th scope="col">Last active</th>
-                  <th scope="col">Browser</th>
-                  <th scope="col">IP address</th>
+                  <th scope="col">{tr('Account')}</th>
+                  <th scope="col">{tr('Role')}</th>
+                  <th scope="col">{tr('Signed in')}</th>
+                  <th scope="col">{tr('Last active')}</th>
+                  <th scope="col">{tr('Browser')}</th>
+                  <th scope="col">{tr('IP address')}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.online.map((o, i) => (
                   <tr key={`${o.userId}-${o.since}-${i}`}>
                     <th scope="row">{o.email}</th>
-                    <td>{o.role === 'admin' ? 'Admin' : 'Member'}</td>
+                    <td>{o.role === 'admin' ? tr('Admin') : tr('Member')}</td>
                     <td className="nowrap">{when(o.since)}</td>
                     <td className="nowrap">{ago(o.lastSeen)}</td>
                     <td>{o.agent ?? '—'}</td>
@@ -86,34 +87,33 @@ export default function AuditPage() {
       {data.failures?.length > 0 && (
         <section className="panel audit-failures" aria-labelledby="failures-title">
           <div className="chart-head">
-            <h2 id="failures-title">Failed sign-ins, last 24 hours</h2>
-            <span className="muted small">by the address that was typed</span>
+            <h2 id="failures-title">{tr('Failed sign-ins, last 24 hours')}</h2>
+            <span className="muted small">{tr('by the address that was typed')}</span>
           </div>
           <ul className="audit-failure-list">
             {data.failures.map((f) => (
               <li key={f.email || '(blank)'}>
-                <strong>{f.email || '(blank)'}</strong> — {f.attempts} attempt{f.attempts === 1 ? '' : 's'}, last {ago(f.last)}
+                <strong>{f.email || tr('(blank)')}</strong> — {f.attempts === 1 ? tr('1 attempt, last {0}', [ago(f.last)]) : tr('{0} attempts, last {1}', [f.attempts, ago(f.last)])}
               </li>
             ))}
           </ul>
           <p className="muted small">
-            Sign-in is already rate-limited per address. A run of failures on one account is someone
-            guessing; on many accounts at once, someone trying a password list.
+            {tr('Sign-in is already rate-limited per address. A run of failures on one account is someone guessing; on many accounts at once, someone trying a password list.')}
           </p>
         </section>
       )}
 
       <section className="panel" aria-labelledby="log-title">
         <div className="chart-head">
-          <h2 id="log-title">Audit log</h2>
-          <span className="muted small">newest first · kept {data.retentionDays} days</span>
+          <h2 id="log-title">{tr('Audit log')}</h2>
+          <span className="muted small">{tr('newest first · kept ')}{data.retentionDays}{tr(' days')}</span>
           <label className="control audit-filter">
-            <span className="sr-only">Show</span>
-            <select value={event} onChange={(e) => setEvent(e.target.value)} aria-label="Filter by event">
-              <option value="">Every event</option>
+            <span className="sr-only">{tr('Show')}</span>
+            <select value={event} onChange={(e) => setEvent(e.target.value)} aria-label={tr('Filter by event')}>
+              <option value="">{tr('Every event')}</option>
               {Object.entries(data.events).map(([key, label]) => (
                 <option key={key} value={key}>
-                  {label}
+                  {tr(label)}
                 </option>
               ))}
             </select>
@@ -121,19 +121,19 @@ export default function AuditPage() {
         </div>
 
         {entries.length === 0 ? (
-          <p className="muted small">Nothing recorded{event ? ' of that kind' : ''} yet.</p>
+          <p className="muted small">{tr('Nothing recorded')}{event ? tr(' of that kind') : ''}{tr(' yet.')}</p>
         ) : (
           <div className="scroll-x">
             <table className="audit-table">
               <thead>
                 <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">Event</th>
-                  <th scope="col">Account</th>
-                  <th scope="col">By</th>
-                  <th scope="col">Detail</th>
-                  <th scope="col">Browser</th>
-                  <th scope="col">IP address</th>
+                  <th scope="col">{tr('When')}</th>
+                  <th scope="col">{tr('Event')}</th>
+                  <th scope="col">{tr('Account')}</th>
+                  <th scope="col">{tr('By')}</th>
+                  <th scope="col">{tr('Detail')}</th>
+                  <th scope="col">{tr('Browser')}</th>
+                  <th scope="col">{tr('IP address')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,12 +143,12 @@ export default function AuditPage() {
                       {when(e.at)}
                     </td>
                     <td className="nowrap">
-                      <span className={`audit-tag tag-${tagOf(e.event)}`}>{e.label}</span>
+                      <span className={`audit-tag tag-${tagOf(e.event)}`}>{tr(e.label)}</span>
                     </td>
-                    <td>{e.email || <span className="muted">(blank)</span>}</td>
+                    <td>{e.email || <span className="muted">{tr('(blank)')}</span>}</td>
                     <td className="small">
                       {/* A failed sign-in was typed by someone unknown — not by the account named. */}
-                      {e.actorEmail ?? <span className="muted">{e.event === 'sign_in_failed' ? 'unknown' : 'themselves'}</span>}
+                      {e.actorEmail ?? <span className="muted">{e.event === 'sign_in_failed' ? tr('unknown') : tr('themselves')}</span>}
                     </td>
                     <td className="small">{e.detail ?? ''}</td>
                     <td className="small">{e.agent ?? '—'}</td>
@@ -163,7 +163,7 @@ export default function AuditPage() {
         {data.more && (
           <p>
             <button type="button" onClick={() => load({ before: data.next })} disabled={loading}>
-              {loading ? 'Loading…' : 'Show older'}
+              {loading ? tr('Loading…') : tr('Show older')}
             </button>
           </p>
         )}
@@ -179,12 +179,12 @@ const tagOf = (event) =>
   event === 'sign_in_failed' ? 'fail' : event.startsWith('user_') || event === 'password_reset' ? 'admin' : 'plain';
 
 const when = (iso) =>
-  new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(iso).toLocaleString(dateLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function ago(iso) {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return tr('just now');
+  if (minutes < 60) return tr('{0} min ago', [minutes]);
   const hours = Math.round(minutes / 60);
-  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+  return hours < 24 ? tr('{0} h ago', [hours]) : tr('{0} d ago', [Math.round(hours / 24)]);
 }

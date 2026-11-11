@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { money, shortDate, signed } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * What time alone does: P&L from today to expiry, with the price held where it is.
  *
@@ -44,7 +45,7 @@ export default function DecayChart({ curve, daysForward = 0, height = 220 }) {
   }, [curve, iw, ih, m.left, m.top]);
 
   if (curve.length < 2) {
-    return <p className="muted small">This expires today, so there is no decay left to draw.</p>;
+    return <p className="muted small">{tr('This expires today, so there is no decay left to draw.')}</p>;
   }
 
   const path = curve.map((p, i) => `${i ? 'L' : 'M'}${geo.xOf(p.day)},${geo.yOf(p.pnl)}`).join(' ');
@@ -72,7 +73,7 @@ export default function DecayChart({ curve, daysForward = 0, height = 220 }) {
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Profit and loss from today to expiry with the price unchanged. ${signed(curve[0].pnl)} today, ${signed(curve.at(-1).pnl)} at expiry.`}
+        aria-label={tr('Profit and loss from today to expiry with the price unchanged. {0} today, {1} at expiry.', [signed(curve[0].pnl), signed(curve.at(-1).pnl)])}
         onMouseMove={onMove}
         onMouseLeave={() => setHoverIdx(null)}
       >
@@ -144,13 +145,12 @@ export default function DecayChart({ curve, daysForward = 0, height = 220 }) {
       <figcaption className="muted small">
         {hovered ? (
           <span>
-            <strong>{hovered.day === 0 ? 'Today' : shortDate(hovered.date)}</strong> · {hovered.daysLeft} days left ·{' '}
-            <strong>{signed(hovered.pnl)}</strong> · theta {signed(hovered.theta)}/day
+            <strong>{hovered.day === 0 ? tr('Today') : shortDate(hovered.date)}</strong> · {hovered.daysLeft}{tr(' days left ·')}{' '}
+            <strong>{signed(hovered.pnl)}</strong>{tr(' · theta ')}{signed(hovered.theta)}{tr('/day')}
           </span>
         ) : (
           <span>
-            Price held at today&rsquo;s, implied vol unchanged. Hover for a day; the dot is where the
-            Date slider is.
+            {tr('Price held at today’s, implied vol unchanged. Hover for a day; the dot is where the Date slider is.')}
           </span>
         )}
       </figcaption>
@@ -186,8 +186,8 @@ function dayTicks(curve, width) {
   const mid = curve[Math.floor(curve.length / 2)];
 
   const ticks = [
-    { day: 0, text: 'Today', anchor: 'start' },
-    { day: last.day, text: `${shortDate(last.date)} · expiry`, anchor: 'end' },
+    { day: 0, text: tr('Today'), anchor: 'start' },
+    { day: last.day, text: tr('{0} · expiry', [shortDate(last.date)]), anchor: 'end' },
   ];
 
   // Only when there is room for it twice over: a two-week position has nothing useful to put in

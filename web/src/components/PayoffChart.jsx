@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { money, price as fmtPrice, signed } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * Profit and loss against the underlying's price: the payoff at expiry (solid) and the modelled
  * value on the projected date (dashed), with the strikes, the break-even, today's price and a
@@ -121,12 +122,12 @@ export default function PayoffChart({
 
   return (
     <div className="payoff" ref={wrapRef}>
-      <ul className="legend" aria-label="Series">
+      <ul className="legend" aria-label={tr('Series')}>
         <li>
           <svg width="22" height="8" aria-hidden="true">
             <line x1="1" y1="4" x2="21" y2="4" className="ln-expiry" />
           </svg>
-          At expiry
+          {tr('At expiry')}
         </li>
         {!projectedIsExpiry && (
           <li>
@@ -139,7 +140,7 @@ export default function PayoffChart({
         {sigma ? (
           <li>
             <span className="legend-band" aria-hidden="true" />
-            ±1σ expected move by expiry
+            {tr('±1σ expected move by expiry')}
           </li>
         ) : null}
       </ul>
@@ -150,9 +151,9 @@ export default function PayoffChart({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Profit and loss chart. ${levels
+        aria-label={tr('Profit and loss chart. {0}. The table below the chart has the same values.', [levels
           .map((l) => `${l.label} ${fmtPrice(l.value)}`)
-          .join(', ')}. The table below the chart has the same values.`}
+          .join(', ')])}
         tabIndex={0}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHoverIdx(null)}
@@ -232,7 +233,7 @@ export default function PayoffChart({
           y={geo.y(lastPoint.expiry) + (expiryOnTop ? -8 : 16)}
           textAnchor="end"
         >
-          At expiry
+          {tr('At expiry')}
         </text>
         {!projectedIsExpiry && (
           <text
@@ -294,14 +295,14 @@ export default function PayoffChart({
         >
           <div className="tt-head">
             <strong>{fmtPrice(hover.price)}</strong>
-            <span className="muted"> {signedPct(hover.price / spot - 1)} from spot</span>
+            <span className="muted"> {signedPct(hover.price / spot - 1)}{tr(' from spot')}</span>
           </div>
           <div className="tt-row">
             <svg width="16" height="6" aria-hidden="true">
               <line x1="0" y1="3" x2="16" y2="3" className="ln-expiry" />
             </svg>
             <strong className={hover.expiry >= 0 ? 'pos' : 'neg'}>{signed(round0(hover.expiry))}</strong>
-            <span className="muted">at expiry</span>
+            <span className="muted">{tr('at expiry')}</span>
           </div>
           {!projectedIsExpiry && (
             <div className="tt-row">

@@ -1,6 +1,9 @@
+import { getLang, tr } from './i18n.js';
+
 const json = async (response) => {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+  // The server answers in English; its refusals are translated here, where the language is known.
+  if (!response.ok) throw new Error(body.error ? tr(body.error) : `${response.status} ${response.statusText}`);
   return body;
 };
 
@@ -34,7 +37,7 @@ export const api = {
   refreshBrief: () => send('/api/brief', 'POST'),
 
   /** One question about the scan the server re-runs from its own cache. */
-  explain: (question) => send('/api/explain', 'POST', { question }),
+  explain: (question) => send('/api/explain', 'POST', { question, lang: getLang() }),
 
   // The tracker. The GET carries the live part — prices, deltas, breaches — which is computed
   // per request and never stored.

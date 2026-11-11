@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { api } from '../api.js';
 
+import { tr } from '../i18n.js';
 /**
  * Ask about the scan on screen.
  *
@@ -27,10 +28,9 @@ export default function AskPanel({ advisor, hasResult }) {
   if (!advisor) {
     return (
       <section className="panel ask-panel">
-        <h2>Ask about these results</h2>
+        <h2>{tr('Ask about these results')}</h2>
         <p className="muted small">
-          Off. Set <code>ANTHROPIC_API_KEY</code> in the environment to turn it on — it is the one
-          part of this app that costs money per use, so it is opt-in.
+          {tr('Off. Set ')}<code>{tr('ANTHROPIC_API_KEY')}</code>{tr(' in the environment to turn it on — it is the one part of this app that costs money per use, so it is opt-in.')}
         </p>
       </section>
     );
@@ -56,12 +56,10 @@ export default function AskPanel({ advisor, hasResult }) {
 
   return (
     <section className="panel ask-panel">
-      <h2>Ask about these results</h2>
+      <h2>{tr('Ask about these results')}</h2>
 
       <p className="muted small">
-        Reads the ranked candidates below — their credit, max loss, probabilities and liquidity —
-        and nothing else. It has not seen a chart, the news, or anything about the companies, so it
-        cannot tell you what a price will do. Everything numeric still comes from the screener.
+        {tr('Reads the ranked candidates below — their credit, max loss, probabilities and liquidity — and nothing else. It has not seen a chart, the news, or anything about the companies, so it cannot tell you what a price will do. Everything numeric still comes from the screener.')}
       </p>
 
       <form
@@ -72,7 +70,7 @@ export default function AskPanel({ advisor, hasResult }) {
         }}
       >
         <label className="sr-only" htmlFor="ask-question">
-          Your question
+          {tr('Your question')}
         </label>
         <textarea
           id="ask-question"
@@ -85,19 +83,19 @@ export default function AskPanel({ advisor, hasResult }) {
               ask();
             }
           }}
-          placeholder={hasResult ? 'Which of these looks best, and what is the catch?' : 'Run a scan first.'}
+          placeholder={hasResult ? tr('Which of these looks best, and what is the catch?') : tr('Run a scan first.')}
           rows={2}
           maxLength={500}
           disabled={!hasResult || asking}
         />
         <button type="submit" className="primary" disabled={!hasResult || asking || !question.trim()}>
-          {asking ? 'Reading…' : 'Ask'}
+          {asking ? tr('Reading…') : tr('Ask')}
         </button>
       </form>
 
       {hasResult && !answer && !asking && (
         <ul className="suggestions">
-          {SUGGESTIONS.map((text) => (
+          {SUGGESTIONS.map((s) => tr(s)).map((text) => (
             <li key={text}>
               <button type="button" className="link-button" onClick={() => ask(text)}>
                 {text}
@@ -119,18 +117,16 @@ export default function AskPanel({ advisor, hasResult }) {
 
           {answer.ungrounded?.length > 0 && (
             <p className="warning small">
-              This answer mentions {answer.ungrounded.join(', ')}, which {answer.ungrounded.length > 1 ? 'are' : 'is'}{' '}
-              not in your scan. Treat {answer.ungrounded.length > 1 ? 'those parts' : 'that part'} as unfounded — every
-              other claim can be checked against the table below.
+              {tr('This answer mentions ')}{answer.ungrounded.join(', ')}{tr(', which ')}{answer.ungrounded.length > 1 ? tr('are') : tr('is')}{' '}
+              {tr('not in your scan. Treat ')}{answer.ungrounded.length > 1 ? tr('those parts') : tr('that part')}{tr(' as unfounded — every other claim can be checked against the table below.')}
             </p>
           )}
 
-          {answer.truncated && <p className="muted small">The answer was cut off at the length limit.</p>}
+          {answer.truncated && <p className="muted small">{tr('The answer was cut off at the length limit.')}</p>}
 
           <p className="muted small answer-foot">
-            {answer.model} · read the top {answer.candidatesConsidered} candidates from the {answer.asOf} scan
-            {answer.usage?.output ? ` · ${answer.usage.input + answer.usage.output} tokens` : ''}. Not advice, and
-            not a forecast — check every number against your broker before acting on it.
+            {answer.model}{tr(' · read the top ')}{answer.candidatesConsidered}{tr(' candidates from the ')}{answer.asOf}{tr(' scan')}
+            {answer.usage?.output ? tr(' · {0} tokens', [answer.usage.input + answer.usage.output]) : ''}{tr('. Not advice, and not a forecast — check every number against your broker before acting on it.')}
           </p>
         </div>
       )}

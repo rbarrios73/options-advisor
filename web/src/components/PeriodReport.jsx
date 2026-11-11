@@ -5,6 +5,7 @@ import { KIND_LABELS, PRESETS, periodReport, presetRange } from '@domain/report.
 
 import { pct, price, shortDate } from '../format.js';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * Trading results between two dates — the weekly journal, kept by the app.
  *
@@ -39,15 +40,14 @@ export default function PeriodReport({ positions, today }) {
     <section className="panel results-report" aria-labelledby="results-title">
       <div className="report-head">
         <div>
-          <h2 id="results-title">Trading results</h2>
+          <h2 id="results-title">{tr('Trading results')}</h2>
           <p className="muted small report-range">
-            {longDate(report.from)} – {longDate(report.to)} · {totals.tradingDays} trading day
-            {totals.tradingDays === 1 ? '' : 's'}
+            {longDate(report.from)} – {longDate(report.to)} · {totals.tradingDays === 1 ? tr('1 trading day') : tr('{0} trading days', [totals.tradingDays])}
           </p>
         </div>
 
-        <form className="report-filter" onSubmit={(e) => e.preventDefault()} aria-label="Date range">
-          <div className="segmented" role="radiogroup" aria-label="Period">
+        <form className="report-filter" onSubmit={(e) => e.preventDefault()} aria-label={tr('Date range')}>
+          <div className="segmented" role="radiogroup" aria-label={tr('Period')}>
             {Object.entries(PRESETS).map(([key, label]) => (
               <button
                 key={key}
@@ -57,16 +57,16 @@ export default function PeriodReport({ positions, today }) {
                 className={preset === key ? 'on' : ''}
                 onClick={() => choose(key)}
               >
-                {label}
+                {tr(label)}
               </button>
             ))}
           </div>
           <label className="field">
-            <span>From</span>
+            <span>{tr('From')}</span>
             <input type="date" value={range.from} max={today} onChange={setDate('from')} />
           </label>
           <label className="field">
-            <span>To</span>
+            <span>{tr('To')}</span>
             <input type="date" value={range.to} max={today} onChange={setDate('to')} />
           </label>
         </form>
@@ -74,57 +74,57 @@ export default function PeriodReport({ positions, today }) {
 
       {totals.count === 0 ? (
         <p className="muted">
-          Nothing opened, rolled or closed between {shortDate(report.from)} and {shortDate(report.to)}.
-          {report.assigned > 0 && ` ${report.assigned} assignment${report.assigned === 1 ? '' : 's'} — not counted here.`}
+          {tr('Nothing opened, rolled or closed between ')}{shortDate(report.from)}{tr(' and ')}{shortDate(report.to)}.
+          {report.assigned > 0 && (report.assigned === 1 ? tr(' 1 assignment — not counted here.') : tr(' {0} assignments — not counted here.', [report.assigned]))}
         </p>
       ) : (
         <>
           <dl className="report-tiles">
-            <Tile label="Premium collected" value={money2(totals.collected)} hint="before closes" />
+            <Tile label={tr('Premium collected')} value={money2(totals.collected)} hint={tr('before closes')} />
             <Tile
-              label="Cost to close"
+              label={tr('Cost to close')}
               value={totals.costToClose > 0 ? `−${money2(totals.costToClose)}` : money2(0)}
-              hint={`${groups.close.count} trade${groups.close.count === 1 ? '' : 's'}`}
+              hint={(groups.close.count === 1 ? tr('1 trade') : tr('{0} trades', [groups.close.count]))}
             />
-            <Tile label="Net premium" value={money2(totals.net)} hint="after closes" strong />
-            <Tile label="Transactions" value={String(totals.count)} hint={report.assigned ? 'assignments not counted' : 'excludes assignments'} />
-            <Tile label="Average per transaction" value={money2(totals.averagePerTransaction)} hint="net" />
+            <Tile label={tr('Net premium')} value={money2(totals.net)} hint={tr('after closes')} strong />
+            <Tile label={tr('Transactions')} value={String(totals.count)} hint={report.assigned ? tr('assignments not counted') : tr('excludes assignments')} />
+            <Tile label={tr('Average per transaction')} value={money2(totals.averagePerTransaction)} hint={tr('net')} />
           </dl>
 
           <dl className="report-tiles report-tiles-secondary">
-            <Tile label="Capital required" value={money2(totals.capital)} hint="for these trades" />
-            <Tile label="Return on capital" value={pct(totals.returnOnCapital, 2)} hint="net ÷ capital required" />
-            <Tile label="Per trading day" value={money2(totals.perDay)} hint={`over ${totals.tradingDays} day${totals.tradingDays === 1 ? '' : 's'}`} />
+            <Tile label={tr('Capital required')} value={money2(totals.capital)} hint={tr('for these trades')} />
+            <Tile label={tr('Return on capital')} value={pct(totals.returnOnCapital, 2)} hint={tr('net ÷ capital required')} />
+            <Tile label={tr('Per trading day')} value={money2(totals.perDay)} hint={(totals.tradingDays === 1 ? tr('over 1 day') : tr('over {0} days', [totals.tradingDays]))} />
           </dl>
 
           <div className="report-groups">
             <Group
-              title="New positions"
+              title={tr('New positions')}
               kind="new"
               group={groups.new}
               rows={[
-                ['Total premium', money2(groups.new.premium)],
-                ['Average premium', money2(groups.new.average)],
-                ['Average yearly ROI', pct(groups.new.averageYearlyRoi, 0)],
+                [tr('Total premium'), money2(groups.new.premium)],
+                [tr('Average premium'), money2(groups.new.average)],
+                [tr('Average yearly ROI'), pct(groups.new.averageYearlyRoi, 0)],
               ]}
             />
             <Group
-              title="Rolls"
+              title={tr('Rolls')}
               kind="roll"
               group={groups.roll}
               rows={[
-                ['Total premium', money2(groups.roll.premium)],
-                ['Average premium', money2(groups.roll.average)],
-                ['Average yearly ROI', pct(groups.roll.averageYearlyRoi, 0)],
+                [tr('Total premium'), money2(groups.roll.premium)],
+                [tr('Average premium'), money2(groups.roll.average)],
+                [tr('Average yearly ROI'), pct(groups.roll.averageYearlyRoi, 0)],
               ]}
             />
             <Group
-              title="Closed positions"
+              title={tr('Closed positions')}
               kind="close"
               group={groups.close}
               rows={[
-                ['Total cost to close', groups.close.count ? `−${money2(-groups.close.premium)}` : '—'],
-                ['Average cost', groups.close.count ? `−${money2(-groups.close.average)}` : '—'],
+                [tr('Total cost to close'), groups.close.count ? `−${money2(-groups.close.premium)}` : '—'],
+                [tr('Average cost'), groups.close.count ? `−${money2(-groups.close.average)}` : '—'],
               ]}
             />
             <TradeMix groups={groups} total={totals.count} />
@@ -133,23 +133,23 @@ export default function PeriodReport({ positions, today }) {
           <div className="scroll-x">
             <table className="report-table">
               <caption className="muted small">
-                Every transaction from {shortDate(report.from)} to {shortDate(report.to)}, in date order.
+                {tr('Every transaction from ')}{shortDate(report.from)}{tr(' to ')}{shortDate(report.to)}{tr(', in date order.')}
               </caption>
               <thead>
                 <tr>
                   <th scope="col" className="num">#</th>
-                  <th scope="col">Ticker</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Event</th>
-                  <th scope="col" className="num">Short</th>
-                  <th scope="col" className="num">Long</th>
-                  <th scope="col" className="num">Delta</th>
-                  <th scope="col">Expiry</th>
-                  <th scope="col">Roll</th>
-                  <th scope="col" className="num">Premium</th>
-                  <th scope="col" className="num">Capital</th>
-                  <th scope="col" className="num">Yearly ROI</th>
+                  <th scope="col">{tr('Ticker')}</th>
+                  <th scope="col">{tr('Date')}</th>
+                  <th scope="col">{tr('Type')}</th>
+                  <th scope="col">{tr('Event')}</th>
+                  <th scope="col" className="num">{tr('Short')}</th>
+                  <th scope="col" className="num">{tr('Long')}</th>
+                  <th scope="col" className="num">{tr('Delta')}</th>
+                  <th scope="col">{tr('Expiry')}</th>
+                  <th scope="col">{tr('Roll')}</th>
+                  <th scope="col" className="num">{tr('Premium')}</th>
+                  <th scope="col" className="num">{tr('Capital')}</th>
+                  <th scope="col" className="num">{tr('Yearly ROI')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,27 +162,27 @@ export default function PeriodReport({ positions, today }) {
 
           <ul className="muted small report-notes">
             <li>
-              Return on capital compares net premium with the capital these trades required. It is not
-              your portfolio&rsquo;s return, and the yearly ROI on a short trade is an annualised rate,
-              not a forecast.
+              {tr('Return on capital compares net premium with the capital these trades required. It is not your portfolio’s return, and the yearly ROI on a short trade is an annualised rate, not a forecast.')}
             </li>
             {report.assigned > 0 && (
               <li>
-                {report.assigned} assignment{report.assigned === 1 ? '' : 's'} in this period {report.assigned === 1 ? 'is' : 'are'} not
-                counted — the goals panel above includes {report.assigned === 1 ? 'its' : 'their'} loss.
+                {report.assigned === 1
+                  ? tr('1 assignment in this period is not counted — the goals panel above includes its loss.')
+                  : tr('{0} assignments in this period are not counted — the goals panel above includes their loss.', [report.assigned])}
               </li>
             )}
             {totals.capitalMissing > 0 && (
               <li>
-                {totals.capitalMissing} trade{totals.capitalMissing === 1 ? ' has' : 's have'} no capital figure (covered calls,
-                poor man&rsquo;s covered calls, or a spread missing its long strike) and {totals.capitalMissing === 1 ? 'is' : 'are'}{' '}
-                left out of capital required.
+                {totals.capitalMissing === 1
+                  ? tr('1 trade has no capital figure (covered calls, poor man’s covered calls, or a spread missing its long strike) and is left out of capital required.')
+                  : tr('{0} trades have no capital figure (covered calls, poor man’s covered calls, or a spread missing its long strike) and are left out of capital required.', [totals.capitalMissing])}
               </li>
             )}
             {report.closesWithoutCost > 0 && (
               <li>
-                {report.closesWithoutCost} close{report.closesWithoutCost === 1 ? '' : 's'} in this period {report.closesWithoutCost === 1 ? 'has' : 'have'} no
-                cost to close recorded, so {report.closesWithoutCost === 1 ? 'it is' : 'they are'} not listed.
+                {report.closesWithoutCost === 1
+                  ? tr('1 close in this period has no cost to close recorded, so it is not listed.')
+                  : tr('{0} closes in this period have no cost to close recorded, so they are not listed.', [report.closesWithoutCost])}
               </li>
             )}
           </ul>
@@ -229,19 +229,19 @@ function Group({ title, kind, group, rows }) {
  */
 function TradeMix({ groups, total }) {
   const parts = [
-    ['new', 'New', groups.new.count],
-    ['roll', 'Rolls', groups.roll.count],
-    ['close', 'Closed', groups.close.count],
+    ['new', tr('New'), groups.new.count],
+    ['roll', tr('Rolls'), groups.roll.count],
+    ['close', tr('Closed##mix'), groups.close.count],
   ].filter(([, , n]) => n > 0);
 
   const summary = parts.map(([, label, n]) => `${label} ${n} (${pct(n / total, 0)})`).join(', ');
 
   return (
-    <section className="report-group report-mix" aria-label="Trade mix">
+    <section className="report-group report-mix" aria-label={tr('Trade mix')}>
       <h3>
-        <span className="report-count">{total}</span> Trade mix
+        <span className="report-count">{total}</span>{tr(' Trade mix')}
       </h3>
-      <div className="mix-bar" role="img" aria-label={`Trade mix: ${summary}`}>
+      <div className="mix-bar" role="img" aria-label={tr('Trade mix: {0}', [summary])}>
         {parts.map(([kind, label, n]) => (
           <span key={kind} className={`mix-part kind-${kind}`} style={{ flexGrow: n }} title={`${label}: ${n} (${pct(n / total, 0)})`}>
             {n / total >= 0.12 ? pct(n / total, 0) : ''}
@@ -264,17 +264,17 @@ function TransactionRow({ index, t }) {
   const spec = POSITION_TYPES[p.type];
 
   let roll = '—';
-  if (t.rolledFrom) roll = `from ${shortDate(t.rolledFrom.expiration)}`;
-  else if (t.newLegMissing) roll = t.rolledTo ? `to ${shortDate(t.rolledTo.expiration)} · new leg not recorded` : 'new leg not recorded';
+  if (t.rolledFrom) roll = tr('from {0}', [shortDate(t.rolledFrom.expiration)]);
+  else if (t.newLegMissing) roll = t.rolledTo ? tr('to {0} · new leg not recorded', [shortDate(t.rolledTo.expiration)]) : tr('new leg not recorded');
 
   return (
     <tr className={`kind-row kind-${t.kind}`}>
       <td className="num muted">{index}</td>
       <th scope="row">{p.symbol}</th>
       <td className="nowrap">{shortDate(t.date)}</td>
-      <td title={spec?.label}>{p.type}</td>
+      <td title={tr(spec?.label)}>{p.type}</td>
       <td>
-        <span className={`event-tag kind-${t.kind}`}>{KIND_LABELS[t.kind]}</span>
+        <span className={`event-tag kind-${t.kind}`}>{tr(`${KIND_LABELS[t.kind]}##event`)}</span>
       </td>
       <td className="num">{price(p.shortStrike)}</td>
       <td className="num">{price(p.longStrike)}</td>
@@ -294,4 +294,4 @@ const money2 = (v) =>
 const signed2 = (v) => (Number.isFinite(v) ? `${v > 0 ? '+' : v < 0 ? '−' : ''}${money2(Math.abs(v))}` : '—');
 
 const longDate = (iso) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString(dateLocale(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });

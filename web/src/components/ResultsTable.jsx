@@ -3,10 +3,11 @@ import { Fragment, useState } from 'react';
 import CandidateDetail from './CandidateDetail.jsx';
 import { STRATEGY_LABELS, money, price, pct, signed } from '../format.js';
 
+import { tr } from '../i18n.js';
 const COLUMNS = [
   { key: 'score', label: 'Score', render: (c) => c.score.toFixed(3), numeric: true },
   { key: 'symbol', label: 'Symbol', render: (c) => c.symbol },
-  { key: 'kind', label: 'Strategy', render: (c) => STRATEGY_LABELS[c.kind] ?? c.kind },
+  { key: 'kind', label: 'Strategy', render: (c) => tr(STRATEGY_LABELS[c.kind]) ?? c.kind },
   { key: 'expiration', label: 'Expiry', render: (c) => c.expiration },
   { key: 'dte', label: 'DTE', render: (c) => c.dte, numeric: true },
   { key: 'strikes', label: 'Strikes', render: (c) => strikeLabel(c), sortable: false },
@@ -54,10 +55,10 @@ export default function ResultsTable({ candidates }) {
                 {/* A real button, so Tab reaches it and Enter or Space sorts. A th with
                     role="button" looked clickable but could not be focused at all. */}
                 {col.sortable === false ? (
-                  col.label
+                  tr(col.label)
                 ) : (
                   <button type="button" className="results-sort" onClick={() => toggleSort(col.key)}>
-                    {col.label}
+                    {tr(col.label)}
                     <span aria-hidden="true">{sorted ? (sort.dir === 'desc' ? ' ▾' : ' ▴') : ''}</span>
                   </button>
                 )}
@@ -89,7 +90,7 @@ export default function ResultsTable({ candidates }) {
                         className="results-expand"
                         aria-expanded={open}
                         aria-controls={`detail-${c.id}`}
-                        aria-label={`${open ? 'Hide' : 'Show'} detail for ${c.symbol} ${STRATEGY_LABELS[c.kind] ?? c.kind} ${c.expiration}`}
+                        aria-label={tr('{0} detail for {1} {2} {3}', [open ? tr('Hide') : tr('Show'), c.symbol, tr(STRATEGY_LABELS[c.kind]) ?? c.kind, c.expiration])}
                         onClick={(event) => {
                           event.stopPropagation(); // the row's own click would toggle it back
                           setOpenId(open ? null : c.id);
@@ -102,7 +103,7 @@ export default function ResultsTable({ candidates }) {
                       col.render(c)
                     )}
                     {col.key === 'expiration' && c.earningsBeforeExpiry && (
-                      <span className="flag" title={`Earnings ${c.earningsBeforeExpiry} falls before this expiry`}>
+                      <span className="flag" title={tr('Earnings {0} falls before this expiry', [c.earningsBeforeExpiry])}>
                         E
                       </span>
                     )}

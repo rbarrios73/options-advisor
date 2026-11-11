@@ -17,6 +17,7 @@ import {
 } from './auth.js';
 import { migrate } from './db.js';
 import { AUDIT_EVENTS, clientOf, createAuditLog, describeAgent } from './audit.js';
+import { suggestLanguage } from './locale.js';
 import { UserError, createUserStore, passwordProblem } from './users.js';
 import { createProvider } from './providers/index.js';
 import { createDbStore, createFileStore, guestState } from './store.js';
@@ -188,6 +189,9 @@ export function createApp({ config, db = null }) {
         // So the sign-in screen knows whether to offer a door. A closed or full deployment should
         // not advertise one that is locked.
         signupOpen: await signupAvailable(),
+        // A first guess at the visitor's language, from where the request came from. The browser
+        // only uses it until the visitor picks one themselves.
+        ...suggestLanguage(req),
       });
     }),
   );
@@ -940,7 +944,7 @@ export function createApp({ config, db = null }) {
         state.watchlist,
       );
 
-      const answer = await advisor.ask({ question: req.body?.question, result });
+      const answer = await advisor.ask({ question: req.body?.question, result, lang: req.body?.lang });
 
       res.json({
         ...answer,

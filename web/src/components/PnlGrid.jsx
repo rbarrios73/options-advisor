@@ -1,5 +1,6 @@
 import { money, price, shortDate } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * Profit and loss by price and date — the chart's table view. It carries the same numbers as the
  * curves, so nothing on the chart is reachable only by hovering.
@@ -16,16 +17,15 @@ export default function PnlGrid({ grid }) {
     <div className="grid-wrap">
       <table className="pnl-grid">
         <caption className="muted small">
-          P&amp;L of the whole position if closed at that price on that date, at the IV shown on the
-          sliders. The last column is expiry, where it is exact; the others are modelled.
+          {tr('P&L of the whole position if closed at that price on that date, at the IV shown on the sliders. The last column is expiry, where it is exact; the others are modelled.')}
         </caption>
         <thead>
           <tr>
-            <th scope="col">Price</th>
+            <th scope="col">{tr('Price')}</th>
             {grid.columns.map((c) => (
               <th key={c.date} scope="col" className="num">
-                {c.daysForward === 0 ? 'Today' : shortDate(c.date)}
-                <span className="sub">{c.daysLeft === 0 ? 'expiry' : `${c.daysLeft}d left`}</span>
+                {c.daysForward === 0 ? tr('Today') : shortDate(c.date)}
+                <span className="sub">{c.daysLeft === 0 ? tr('expiry') : tr('{0}d left', [c.daysLeft])}</span>
               </th>
             ))}
           </tr>
@@ -68,6 +68,6 @@ function rowTags(prices, keyLevels = {}) {
   return prices.map((p) =>
     Object.entries(keyLevels)
       .filter(([, level]) => Math.abs(level - p) < 1e-6)
-      .map(([name]) => LABELS[name] ?? name),
+      .map(([name]) => (LABELS[name] ? tr(LABELS[name]) : name)),
   );
 }

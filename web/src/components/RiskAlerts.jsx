@@ -1,5 +1,6 @@
 import { SEVERITY_LABELS } from '@domain/manage.js';
 
+import { tr } from '../i18n.js';
 /**
  * What to watch on this position at today's prices, worst first.
  *
@@ -14,32 +15,31 @@ export default function RiskAlerts({ alerts }) {
   return (
     <section className="panel risk-alerts" aria-labelledby="alerts-title">
       <div className="chart-head">
-        <h2 id="alerts-title">Risk alerts</h2>
+        <h2 id="alerts-title">{tr('Risk alerts')}</h2>
         <span className="muted small">
           {alerts.length === 0
-            ? 'at today’s prices'
+            ? tr('at today’s prices')
             : ['critical', 'warning', 'info']
                 .filter((k) => counts[k])
-                .map((k) => `${counts[k]} ${SEVERITY_LABELS[k].toLowerCase()}`)
-                .join(' · ') + ' · at today’s prices'}
+                .map((k) => `${counts[k]} ${tr(SEVERITY_LABELS[k]).toLowerCase()}`)
+                .join(' · ') + tr(' · at today’s prices')}
         </span>
       </div>
 
       {alerts.length === 0 ? (
         <p className="muted small alerts-none">
-          <AlertIcon severity="ok" /> Nothing to flag: the strikes are clear of the price, the quotes are tight,
-          and there is time left.
+          <AlertIcon severity="ok" />{tr(' Nothing to flag: the strikes are clear of the price, the quotes are tight, and there is time left.')}
         </p>
       ) : (
         <ul className="alerts-list">
           {alerts.map((a, i) => (
-            <li key={`${a.title}-${i}`} className={`alert sev-${a.severity}`}>
+            <li key={`${tr(a.title)}-${i}`} className={`alert sev-${a.severity}`}>
               <AlertIcon severity={a.severity} />
               <div>
                 <p className="alert-title">
-                  <span className="alert-sev">{SEVERITY_LABELS[a.severity]}</span> {a.title}
+                  <span className="alert-sev">{tr(SEVERITY_LABELS[a.severity])}</span> {tr(a.title)}
                 </p>
-                <p className="alert-detail">{a.detail}</p>
+                <p className="alert-detail">{tr(a.detail)}</p>
               </div>
             </li>
           ))}

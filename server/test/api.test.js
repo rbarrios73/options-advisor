@@ -118,7 +118,8 @@ test('writes, positions, the simulator’s chains and the AI need a session; hea
   assert.equal(me.status, 200);
   assert.deepEqual(
     me.body,
-    { accounts: true, user: null, signupOpen: false },
+    // A test request comes from 127.0.0.1 with no browser language, so the guess is the default.
+    { accounts: true, user: null, signupOpen: false, lang: 'en', country: null, from: 'default' },
     'not signed in is an answer, not an error — and sign-up is off until SIGNUP_OPEN says so',
   );
 

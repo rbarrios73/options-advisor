@@ -1,5 +1,7 @@
+import LanguageToggle from '../components/LanguageToggle.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
+import { tr } from '../i18n.js';
 /**
  * The front door: what Trader Mice is, before anyone is asked for a password.
  *
@@ -17,15 +19,15 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
       <header className="landing-top">
         <span className="landing-brand">
           <img src="/logo-mark.png" alt="" width="46" height="32" />
-          Trader Mice
+          {tr('Trader Mice')}
         </span>
-        <nav className="landing-actions" aria-label="Account">
+        <nav className="landing-actions" aria-label={tr('Account')}>
           <button type="button" className="link-button" onClick={() => onStart('signin')}>
-            Sign in
+            {tr('Sign in')}
           </button>
           {signupOpen && (
             <button type="button" className="primary" onClick={() => onStart('signup')}>
-              Create account
+              {tr('Create account')}
             </button>
           )}
         </nav>
@@ -34,29 +36,26 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
       <main>
         <section className="landing-hero" aria-labelledby="landing-title">
           <div className="landing-hero-copy">
-            <p className="landing-kicker">Options screener · simulator · trade journal</p>
+            <p className="landing-kicker">{tr('Options screener · simulator · trade journal')}</p>
             <h1 id="landing-title">
-              Defined-risk option trades, ranked every day — with every number shown.
+              {tr('Defined-risk option trades, ranked every day — with every number shown.')}
             </h1>
             <p className="landing-lede">
-              Trader Mice scans your watchlist&rsquo;s option chains, ranks credit spreads and
-              long options, and shows exactly how each score was built. Then it lets you test the
-              trade before you place it, and tracks it after.
+              {tr('Trader Mice scans your watchlist’s option chains, ranks credit spreads and long options, and shows exactly how each score was built. Then it lets you test the trade before you place it, and tracks it after.')}
             </p>
             <div className="landing-cta">
               <button type="button" className="primary" onClick={() => onStart(signupOpen ? 'signup' : 'signin')}>
-                {signupOpen ? 'Create a free account' : 'Sign in'}
+                {signupOpen ? tr('Create a free account') : tr('Sign in')}
               </button>
               {onExplore && (
                 <button type="button" className="link-button" onClick={onExplore}>
-                  Try the screener — no account needed
+                  {tr('Try the screener — no account needed')}
                 </button>
               )}
             </div>
             {onExplore && (
               <p className="muted small landing-guest-note">
-                The Screener, Ticker, Watchlist and Dividends pages are open to everyone. Positions and
-                the Simulator need a free account.
+                {tr('The Screener, Ticker, Watchlist and Dividends pages are open to everyone. Positions and the Simulator need a free account.')}
               </p>
             )}
           </div>
@@ -65,94 +64,81 @@ export default function LandingPage({ signupOpen, onStart, onExplore, theme, onT
         </section>
 
         <section className="landing-section" aria-labelledby="features-title">
-          <h2 id="features-title">What it does</h2>
+          <h2 id="features-title">{tr('What it does')}</h2>
           <ul className="landing-features">
-            <Feature title="Daily screener" icon={<IconScan />}>
-              Scans every symbol on your watchlist and ranks put credit spreads, call credit spreads
-              and long options by win probability, return on risk and liquidity — with the legs and
-              quotes each candidate was priced from.
+            <Feature title={tr('Daily screener')} icon={<IconScan />}>
+              {tr('Scans every symbol on your watchlist and ranks put credit spreads, call credit spreads and long options by win probability, return on risk and liquidity — with the legs and quotes each candidate was priced from.')}
             </Feature>
-            <Feature title="Position simulator" icon={<IconCurve />}>
-              Choose strikes by delta or by price, then drag the date and implied volatility to see
-              the P&amp;L chart, a price-by-date table and the position&rsquo;s greeks move with them.
+            <Feature title={tr('Position simulator')} icon={<IconCurve />}>
+              {tr('Choose strikes by delta or by price, then drag the date and implied volatility to see the P&L chart, a price-by-date table and the position’s greeks move with them.')}
             </Feature>
-            <Feature title="Expected range" icon={<IconCone />}>
-              The price band the option market is pricing in for each expiry, how that compares with
-              how much the stock has really moved, and the odds of reaching any price you type.
+            <Feature title={tr('Expected range')} icon={<IconCone />}>
+              {tr('The price band the option market is pricing in for each expiry, how that compares with how much the stock has really moved, and the odds of reaching any price you type.')}
             </Feature>
-            <Feature title="Positions and goals" icon={<IconTarget />}>
-              Track open trades against live prices, see when a short strike is being tested, and
-              measure premium banked against daily, weekly and monthly targets.
+            <Feature title={tr('Positions and goals')} icon={<IconTarget />}>
+              {tr('Track open trades against live prices, see when a short strike is being tested, and measure premium banked against daily, weekly and monthly targets.')}
             </Feature>
-            <Feature title="Trading results" icon={<IconReport />}>
-              A journal for any date range: premium collected, cost to close, net premium, capital
-              required and yearly ROI per trade, split into new positions, rolls and closes.
+            <Feature title={tr('Trading results')} icon={<IconReport />}>
+              {tr('A journal for any date range: premium collected, cost to close, net premium, capital required and yearly ROI per trade, split into new positions, rolls and closes.')}
             </Feature>
-            <Feature title="Dividends" icon={<IconCalendar />}>
-              What the names you follow pay and when, ranked by yield — with each one&rsquo;s risk
-              written beside it, so a yield the market has stopped believing does not top the list.
+            <Feature title={tr('Dividends')} icon={<IconCalendar />}>
+              {tr('What the names you follow pay and when, ranked by yield — with each one’s risk written beside it, so a yield the market has stopped believing does not top the list.')}
             </Feature>
           </ul>
         </section>
 
         <section className="landing-section" aria-labelledby="how-title">
-          <h2 id="how-title">How it works</h2>
+          <h2 id="how-title">{tr('How it works')}</h2>
           <ol className="landing-steps">
             <li>
-              <h3>Build a watchlist</h3>
-              <p>Start from nine liquid ETFs and NVDA, or add your own. Each account keeps its own lists.</p>
+              <h3>{tr('Build a watchlist')}</h3>
+              <p>{tr('Start from nine liquid ETFs and NVDA, or add your own. Each account keeps its own lists.')}</p>
             </li>
             <li>
-              <h3>Scan the chains</h3>
-              <p>One click reads today&rsquo;s option chains and ranks what fits your filters and weights.</p>
+              <h3>{tr('Scan the chains')}</h3>
+              <p>{tr('One click reads today’s option chains and ranks what fits your filters and weights.')}</p>
             </li>
             <li>
-              <h3>Test it, then track it</h3>
-              <p>Open any candidate in the simulator, save it as a position, and watch it to expiry.</p>
+              <h3>{tr('Test it, then track it')}</h3>
+              <p>{tr('Open any candidate in the simulator, save it as a position, and watch it to expiry.')}</p>
             </li>
           </ol>
         </section>
 
         <section className="landing-section landing-principles" aria-labelledby="principles-title">
-          <h2 id="principles-title">Built to be honest about the numbers</h2>
+          <h2 id="principles-title">{tr('Built to be honest about the numbers')}</h2>
           <ul>
             <li>
-              <strong>Conservative prices.</strong> A spread is priced selling the bid and buying the
-              ask, never at the flattering midpoint — and the gap to mid is always shown.
+              <strong>{tr('Conservative prices.')}</strong>{tr(' A spread is priced selling the bid and buying the ask, never at the flattering midpoint — and the gap to mid is always shown.')}
             </li>
             <li>
-              <strong>Probability at the break-even</strong>, not at the short strike, so the odds you
-              see are the odds of making money.
+              <strong>{tr('Probability at the break-even')}</strong>{tr(', not at the short strike, so the odds you see are the odds of making money.')}
             </li>
             <li>
-              <strong>Ranges, not targets.</strong> Implied volatility says how far a price may move,
-              not which way, so nothing here pretends to predict direction.
+              <strong>{tr('Ranges, not targets.')}</strong>{tr(' Implied volatility says how far a price may move, not which way, so nothing here pretends to predict direction.')}
             </li>
             <li>
-              <strong>Readable by everyone.</strong> Charts use blue and orange rather than red and
-              green, in light and dark themes.
+              <strong>{tr('Readable by everyone.')}</strong>{tr(' Charts use blue and orange rather than red and green, in light and dark themes.')}
             </li>
           </ul>
         </section>
 
         <section className="landing-final" aria-labelledby="final-title">
-          <h2 id="final-title">Ready to look at today&rsquo;s chains?</h2>
+          <h2 id="final-title">{tr('Ready to look at today’s chains?')}</h2>
           <button type="button" className="primary" onClick={() => onStart(signupOpen ? 'signup' : 'signin')}>
-            {signupOpen ? 'Create a free account' : 'Sign in'}
+            {signupOpen ? tr('Create a free account') : tr('Sign in')}
           </button>
         </section>
       </main>
 
       <footer className="landing-foot">
         <p className="muted small">
-          Trader Mice is an analysis tool, not investment advice. It sees one snapshot of an
-          option chain and knows nothing about your account, your other positions or your taxes.
-          Probabilities come from implied volatility, and real markets make large moves more often
-          than the model assumes. Market data may be delayed.
+          {tr('Trader Mice is an analysis tool, not investment advice. It sees one snapshot of an option chain and knows nothing about your account, your other positions or your taxes. Probabilities come from implied volatility, and real markets make large moves more often than the model assumes. Market data may be delayed.')}
         </p>
         <div className="signin-theme">
-          <span className="muted small">Appearance</span>
+          <span className="muted small">{tr('Appearance')}</span>
           <ThemeToggle value={theme} onChange={onTheme} />
+          <LanguageToggle />
         </div>
       </footer>
     </div>
@@ -214,7 +200,7 @@ function HeroArt() {
         </g>
         </g>
       </svg>
-      <figcaption className="muted small">Illustration</figcaption>
+      <figcaption className="muted small">{tr('Illustration')}</figcaption>
     </figure>
   );
 }

@@ -8,6 +8,7 @@ import { api } from '../api.js';
 import { hrefFor } from '../router.js';
 import { money, pct, price, shortDate, signed } from '../format.js';
 
+import { tr } from '../i18n.js';
 const TYPES = Object.entries(POSITION_TYPES);
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
@@ -54,7 +55,7 @@ export default function PositionsPage() {
   if (!data) {
     return (
       <div className="positions-page">
-        {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
+        {error ? <p className="error">{error}</p> : <p className="muted">{tr('Loading…')}</p>}
       </div>
     );
   }
@@ -67,9 +68,7 @@ export default function PositionsPage() {
     <div className="positions-page">
       <div className="page-head">
         <p className="muted small">
-          The trades you have on, and the premium they have realised. Current price, the short
-          leg&rsquo;s delta and whether a strike is breached are fetched from the same chain data the
-          screener uses — everything else is what you were filled at, which nothing can derive.
+          {tr('The trades you have on, and the premium they have realised. Current price, the short leg’s delta and whether a strike is breached are fetched from the same chain data the screener uses — everything else is what you were filled at, which nothing can derive.')}
         </p>
       </div>
 
@@ -83,41 +82,41 @@ export default function PositionsPage() {
 
       <div className="positions-head">
         <h2>
-          {open.length} open{settled.length > 0 && <span className="muted"> · {settled.length} settled</span>}
+          {open.length}{tr(' open')}{settled.length > 0 && <span className="muted"> · {settled.length}{tr(' settled')}</span>}
         </h2>
         {settled.length > 0 && (
           <button type="button" onClick={() => setShowClosed((v) => !v)}>
-            {showClosed ? 'Hide settled' : 'Show settled'}
+            {showClosed ? tr('Hide settled') : tr('Show settled')}
           </button>
         )}
       </div>
 
       {rows.length === 0 ? (
         <p className="muted">
-          Nothing tracked yet. Add a position above — or open one from the{' '}
-          <a href={hrefFor('simulator')}>simulator</a> and record it here.
+          {tr('Nothing tracked yet. Add a position above — or open one from the')}{' '}
+          <a href={hrefFor('simulator')}>{tr('simulator')}</a>{tr(' and record it here.')}
         </p>
       ) : (
         <div className="scroll-x">
           <table className="positions-table">
             <caption className="muted small">
-              Open positions first, soonest expiry at the top. Prices as of {data.asOf}.
+              {tr('Open positions first, soonest expiry at the top. Prices as of ')}{data.asOf}.
             </caption>
             <thead>
               <tr>
-                <th scope="col">Status</th>
-                <th scope="col">Symbol</th>
+                <th scope="col">{tr('Status')}</th>
+                <th scope="col">{tr('Symbol')}</th>
                 <th scope="col" className="num">#</th>
-                <th scope="col">Account</th>
-                <th scope="col">Type</th>
-                <th scope="col" className="num">Short</th>
-                <th scope="col" className="num">Long</th>
-                <th scope="col" className="num">Delta</th>
-                <th scope="col">Expiry</th>
-                <th scope="col" className="num">Price</th>
-                <th scope="col">Earnings</th>
-                <th scope="col" className="num">Premium</th>
-                <th scope="col"><span className="sr-only">Actions</span></th>
+                <th scope="col">{tr('Account')}</th>
+                <th scope="col">{tr('Type')}</th>
+                <th scope="col" className="num">{tr('Short')}</th>
+                <th scope="col" className="num">{tr('Long')}</th>
+                <th scope="col" className="num">{tr('Delta')}</th>
+                <th scope="col">{tr('Expiry')}</th>
+                <th scope="col" className="num">{tr('Price')}</th>
+                <th scope="col">{tr('Earnings')}</th>
+                <th scope="col" className="num">{tr('Premium')}</th>
+                <th scope="col"><span className="sr-only">{tr('Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -155,9 +154,9 @@ function Goals({ totals, goals, onSave, busy }) {
   return (
     <section className="panel goals">
       <div className="goals-head">
-        <h2>Premium against goals</h2>
+        <h2>{tr('Premium against goals')}</h2>
         <button type="button" onClick={() => setEditing((v) => !v)} disabled={busy}>
-          {editing ? 'Done' : 'Edit goals'}
+          {editing ? tr('Done') : tr('Edit goals')}
         </button>
       </div>
 
@@ -183,19 +182,19 @@ function Goals({ totals, goals, onSave, busy }) {
             </label>
           ))}
           <button type="submit" className="primary" disabled={busy}>
-            Save
+            {tr('Save')}
           </button>
         </form>
       ) : (
         <div className="goal-row">
-          <Goal label="Today" period={totals.today} />
-          <Goal label="This week" period={totals.week} hint={`since ${shortDate(totals.week.from)}`} />
-          <Goal label="This month" period={totals.month} />
+          <Goal label={tr('Today')} period={totals.today} />
+          <Goal label={tr('This week')} period={totals.week} hint={tr('since {0}', [shortDate(totals.week.from)])} />
+          <Goal label={tr('This month')} period={totals.month} />
           <div className="goal">
-            <span className="goal-label">Open premium</span>
+            <span className="goal-label">{tr('Open premium')}</span>
             <strong className="goal-value">{money(totals.openPremium)}</strong>
             <span className="goal-hint">
-              {totals.openCount} position{totals.openCount === 1 ? '' : 's'} — at risk, not banked
+              {totals.openCount === 1 ? tr('1 position — at risk, not banked') : tr('{0} positions — at risk, not banked', [totals.openCount])}
             </span>
           </div>
         </div>
@@ -217,14 +216,14 @@ function Goal({ label, period, hint }) {
       <span
         className="meter"
         role="img"
-        aria-label={`${money(period.net)} of ${money(period.goal)}, ${pct(period.progress ?? 0, 0)}`}
+        aria-label={tr('{0} of {1}, {2}', [money(period.net), money(period.goal), pct(period.progress ?? 0, 0)])}
       >
         <span className="meter-fill" style={{ width: `${share * 100}%` }} />
       </span>
 
       <span className="goal-hint">
-        {pct(period.progress ?? 0, 0)} of {money(period.goal)}
-        {period.assignmentLoss > 0 && ` · ${money(period.assignmentLoss)} assigned`}
+        {pct(period.progress ?? 0, 0)}{tr(' of ')}{money(period.goal)}
+        {period.assignmentLoss > 0 && tr(' · {0} assigned', [money(period.assignmentLoss)])}
         {hint && ` · ${hint}`}
       </span>
     </div>
@@ -253,7 +252,7 @@ function AddPosition({ onAdd, busy }) {
   if (!open) {
     return (
       <button type="button" className="primary add-position" onClick={() => setOpen(true)}>
-        + Add a position
+        {tr('+ Add a position')}
       </button>
     );
   }
@@ -270,24 +269,24 @@ function AddPosition({ onAdd, busy }) {
       }}
     >
       <label className="control">
-        <span>Symbol</span>
+        <span>{tr('Symbol')}</span>
         <input className="w-symbol" value={draft.symbol} onChange={set('symbol')} maxLength={6} autoFocus />
       </label>
 
       <label className="control">
-        <span>Type</span>
+        <span>{tr('Type')}</span>
         <select value={draft.type} onChange={set('type')}>
           {TYPES.map(([key, { label }]) => (
             <option key={key} value={key}>
-              {key} — {label}
+              {key} — {tr(label)}
             </option>
           ))}
         </select>
       </label>
 
       <label className="control">
-        <span>Account</span>
-        <input value={draft.account} onChange={set('account')} list="accounts" placeholder="Fidelity IRA" />
+        <span>{tr('Account')}</span>
+        <input value={draft.account} onChange={set('account')} list="accounts" placeholder={tr('Fidelity IRA')} />
         <datalist id="accounts">
           {['Fidelity IRA', 'Fidelity ROTH', 'Taxable'].map((a) => (
             <option key={a} value={a} />
@@ -296,52 +295,52 @@ function AddPosition({ onAdd, busy }) {
       </label>
 
       <label className="control">
-        <span>Contracts</span>
+        <span>{tr('Contracts')}</span>
         <input type="number" min="1" className="w-qty" value={draft.contracts} onChange={set('contracts')} />
       </label>
 
       <label className="control">
         {/* A long option has one strike and nothing short about it, so the label follows the type
             rather than asking someone to enter a bought call's strike under "short strike". */}
-        <span>{POSITION_TYPES[draft.type]?.short === false ? 'Strike' : 'Short strike'}</span>
+        <span>{POSITION_TYPES[draft.type]?.short === false ? tr('Strike') : tr('Short strike')}</span>
         <input type="number" step="0.5" className="w-qty" value={draft.shortStrike} onChange={set('shortStrike')} />
       </label>
 
       {POSITION_TYPES[draft.type]?.legs !== 1 && (
         <label className="control">
-          <span>Long strike</span>
+          <span>{tr('Long strike')}</span>
           <input type="number" step="0.5" className="w-qty" value={draft.longStrike} onChange={set('longStrike')} />
         </label>
       )}
 
       <label className="control">
-        <span>Expiry</span>
+        <span>{tr('Expiry')}</span>
         <input type="date" value={draft.expiration} onChange={set('expiration')} />
       </label>
 
       <label className="control">
-        <span>Opened</span>
+        <span>{tr('Opened')}</span>
         <input type="date" value={draft.tradeDate} onChange={set('tradeDate')} />
       </label>
 
       <label className="control">
-        <span>Premium $</span>
+        <span>{tr('Premium $')}</span>
         <input
           type="number"
           step="1"
           className="w-qty"
           value={draft.premium}
           onChange={set('premium')}
-          title="Total credit for the whole position, as the broker's fill shows it"
+          title={tr('Total credit for the whole position, as the broker\'s fill shows it')}
         />
       </label>
 
       <div className="form-actions">
         <button type="submit" className="primary" disabled={busy || !ready}>
-          Add
+          {tr('Add')}
         </button>
         <button type="button" onClick={() => setOpen(false)}>
-          Cancel
+          {tr('Cancel')}
         </button>
       </div>
     </form>
@@ -360,9 +359,9 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         <td>
           {/* Label and colour together, never colour alone — a status you can only see is a
               status a colour-blind reader cannot. */}
-          <span className={`badge tone-${STATUSES[position.status].tone}`}>{STATUSES[position.status].label}</span>
-          {breach?.level === 'breached' && <span className="badge tone-warn">In the money</span>}
-          {breach?.level === 'near' && <span className="badge tone-watch">Near strike</span>}
+          <span className={`badge tone-${STATUSES[position.status].tone}`}>{tr(STATUSES[position.status].label)}</span>
+          {breach?.level === 'breached' && <span className="badge tone-warn">{tr('In the money')}</span>}
+          {breach?.level === 'near' && <span className="badge tone-watch">{tr('Near strike')}</span>}
         </td>
 
         <td>
@@ -372,7 +371,7 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         </td>
         <td className="num">{position.contracts}</td>
         <td className="small muted">{position.account || '—'}</td>
-        <td title={POSITION_TYPES[position.type]?.label}>{position.type}</td>
+        <td title={tr(POSITION_TYPES[position.type]?.label)}>{position.type}</td>
         <td className="num">{price(position.shortStrike)}</td>
         <td className="num">{price(position.longStrike)}</td>
         <td className="num">{position.delta == null ? '—' : Math.abs(position.delta).toFixed(3)}</td>
@@ -385,10 +384,10 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
           {position.exDividend && (
             <span
               className={position.exDividend.likely ? 'ex-div likely' : 'ex-div'}
-              title={position.exDividend.text}
+              title={tr(position.exDividend.text)}
             >
-              Ex-div {shortDate(position.exDividend.exDate)}
-              {position.exDividend.likely ? ' · assignment likely' : ''}
+              {tr('Ex-div ')}{shortDate(position.exDividend.exDate)}
+              {position.exDividend.likely ? tr(' · assignment likely') : ''}
             </span>
           )}
         </td>
@@ -397,9 +396,9 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
         <td className="num">
           {position.premium == null ? '—' : signed(position.premium)}
           {position.closeCost > 0 && (
-            <span className="muted small" title="Paid to buy it back">
+            <span className="muted small" title={tr('Paid to buy it back')}>
               {' '}
-              −{money(position.closeCost)} to close
+              −{money(position.closeCost)}{tr(' to close')}
             </span>
           )}
         </td>
@@ -411,14 +410,14 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
             type="button"
             disabled={busy}
             aria-expanded={editing}
-            aria-label={`Edit ${position.symbol} ${position.type} ${shortDate(position.expiration)}`}
+            aria-label={tr('Edit {0} {1} {2}', [position.symbol, position.type, shortDate(position.expiration)])}
             onClick={() => {
               setEditing((v) => !v);
               setSettling(null);
             }}
           >
             {/* Not "Close" while open: beside Settle, that reads as closing the trade. */}
-            Edit
+            {tr('Edit')}
           </button>
           {position.status === 'open' ? (
             <>
@@ -430,13 +429,13 @@ function Row({ position, earnings, busy, onPatch, onDelete }) {
                   setEditing(false);
                 }}
               >
-                Settle
+                {tr('Settle')}
               </button>
               <SimulateLink position={position} />
             </>
           ) : (
-            <button type="button" disabled={busy} onClick={onDelete} aria-label={`Delete ${position.symbol}`}>
-              Delete
+            <button type="button" disabled={busy} onClick={onDelete} aria-label={tr('Delete {0}', [position.symbol])}>
+              {tr('Delete')}
             </button>
           )}
         </td>
@@ -513,13 +512,13 @@ function EditForm({ position, busy, onCancel, onSave }) {
 
   // What would stop the server accepting it, said before the click rather than after.
   const problem = !/^[A-Za-z.]{1,6}$/.test(draft.symbol.trim())
-    ? 'A symbol is one to six letters.'
+    ? tr('A symbol is one to six letters.')
     : !draft.expiration
-      ? 'An expiry date is needed.'
+      ? tr('An expiry date is needed.')
       : settled && !draft.closedAt
-        ? 'A settled trade needs the date it was settled.'
+        ? tr('A settled trade needs the date it was settled.')
         : draft.closedAt && draft.tradeDate && draft.closedAt < draft.tradeDate
-          ? 'It cannot be settled before it was opened.'
+          ? tr('It cannot be settled before it was opened.')
           : null;
 
   const submit = (event) => {
@@ -547,72 +546,72 @@ function EditForm({ position, busy, onCancel, onSave }) {
   };
 
   return (
-    <form className="settle-form edit-form" onSubmit={submit} aria-label={`Edit ${position.symbol}`}>
+    <form className="settle-form edit-form" onSubmit={submit} aria-label={tr('Edit {0}', [position.symbol])}>
       <div className="edit-grid">
         <label className="control">
-          <span>Symbol</span>
+          <span>{tr('Symbol')}</span>
           <input className="w-symbol" value={draft.symbol} onChange={set('symbol')} maxLength={6} autoFocus />
         </label>
         <label className="control">
-          <span>Type</span>
+          <span>{tr('Type')}</span>
           <select value={draft.type} onChange={set('type')}>
             {TYPES.map(([key, { label }]) => (
               <option key={key} value={key}>
-                {key} — {label}
+                {key} — {tr(label)}
               </option>
             ))}
           </select>
         </label>
         <label className="control">
-          <span>Account</span>
+          <span>{tr('Account')}</span>
           <input value={draft.account} onChange={set('account')} list="accounts" />
         </label>
         <label className="control">
-          <span>Contracts</span>
+          <span>{tr('Contracts')}</span>
           <input type="number" min="1" className="w-qty" value={draft.contracts} onChange={set('contracts')} />
         </label>
         <label className="control">
-          <span>{spec?.short === false ? 'Strike' : 'Short strike'}</span>
+          <span>{spec?.short === false ? tr('Strike') : tr('Short strike')}</span>
           <input type="number" step="0.5" className="w-qty" value={draft.shortStrike} onChange={set('shortStrike')} />
         </label>
         {spec?.legs !== 1 && (
           <label className="control">
-            <span>Long strike</span>
+            <span>{tr('Long strike')}</span>
             <input type="number" step="0.5" className="w-qty" value={draft.longStrike} onChange={set('longStrike')} />
           </label>
         )}
         <label className="control">
-          <span>Expiry</span>
+          <span>{tr('Expiry')}</span>
           <input type="date" value={draft.expiration} onChange={set('expiration')} />
         </label>
         <label className="control">
-          <span>Opened</span>
+          <span>{tr('Opened')}</span>
           <input type="date" value={draft.tradeDate} onChange={set('tradeDate')} />
         </label>
         <label className="control">
-          <span>{settled && draft.status !== 'assigned' ? 'Opening credit $' : 'Premium $'}</span>
+          <span>{settled && draft.status !== 'assigned' ? tr('Opening credit $') : tr('Premium $')}</span>
           <input
             type="number"
             step="0.01"
             className="w-qty"
             value={draft.premium}
             onChange={set('premium')}
-            title="Total for the whole position, as the broker's fill shows it — a debit is negative"
+            title={tr('Total for the whole position, as the broker\'s fill shows it — a debit is negative')}
           />
         </label>
         <label className="control grow">
-          <span>Note</span>
+          <span>{tr('Note')}</span>
           <input value={draft.note} onChange={set('note')} maxLength={200} />
         </label>
       </div>
 
       <div className="edit-grid edit-settlement">
         <label className="control">
-          <span>Status</span>
+          <span>{tr('Status')}</span>
           <select value={draft.status} onChange={set('status')}>
             {Object.entries(STATUSES).map(([key, { label }]) => (
               <option key={key} value={key}>
-                {label}
+                {tr(label)}
               </option>
             ))}
           </select>
@@ -620,48 +619,47 @@ function EditForm({ position, busy, onCancel, onSave }) {
 
         {settled && (
           <label className="control">
-            <span>Settled on</span>
+            <span>{tr('Settled on')}</span>
             <input type="date" value={draft.closedAt} onChange={set('closedAt')} />
           </label>
         )}
         {(draft.status === 'closed' || draft.status === 'rolled') && (
           <label className="control">
-            <span>Cost to close $</span>
+            <span>{tr('Cost to close $')}</span>
             <input type="number" step="0.01" min="0" className="w-qty" value={draft.closeCost} onChange={set('closeCost')} placeholder="0" />
           </label>
         )}
         {draft.status === 'assigned' && (
           <label className="control">
-            <span>Assignment loss $</span>
+            <span>{tr('Assignment loss $')}</span>
             <input type="number" step="1" min="0" className="w-qty" value={draft.assignmentLoss} onChange={set('assignmentLoss')} />
           </label>
         )}
         {draft.status === 'rolled' && (
           <>
             <label className="control">
-              <span>Rolled to expiry</span>
+              <span>{tr('Rolled to expiry')}</span>
               <input type="date" value={draft.rolledToExpiration} onChange={set('rolledToExpiration')} />
             </label>
             <label className="control">
-              <span>Rolled to strike</span>
+              <span>{tr('Rolled to strike')}</span>
               <input type="number" step="0.5" className="w-qty" value={draft.rolledToShortStrike} onChange={set('rolledToShortStrike')} />
             </label>
           </>
         )}
         {position.status !== 'open' && draft.status === 'open' && (
           <p className="muted small edit-reopen">
-            Reopening clears the settlement date and costs, so it stops counting towards the goals and
-            the results report.
+            {tr('Reopening clears the settlement date and costs, so it stops counting towards the goals and the results report.')}
           </p>
         )}
       </div>
 
       <div className="form-actions">
         <button type="submit" className="primary" disabled={busy || Boolean(problem)}>
-          Save changes
+          {tr('Save changes')}
         </button>
         <button type="button" onClick={onCancel}>
-          Cancel
+          {tr('Cancel')}
         </button>
         {problem && <span className="warning small">{problem}</span>}
       </div>
@@ -705,7 +703,7 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
         });
       }}
     >
-      <div className="segmented" role="radiogroup" aria-label="How it ended">
+      <div className="segmented" role="radiogroup" aria-label={tr('How it ended')}>
         {['closed', 'rolled', 'assigned'].map((key) => (
           <button
             key={key}
@@ -715,24 +713,24 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
             className={status === key ? 'on' : ''}
             onClick={() => setStatus(key)}
           >
-            {STATUSES[key].label}
+            {tr(STATUSES[key].label)}
           </button>
         ))}
       </div>
 
       <label className="control">
-        <span>Date</span>
+        <span>{tr('Date')}</span>
         <input type="date" value={closedAt} onChange={(e) => setClosedAt(e.target.value)} required />
       </label>
 
       <label className="control">
-        <span>{buysBack ? 'Opening credit $' : 'Premium kept $'}</span>
+        <span>{buysBack ? tr('Opening credit $') : tr('Premium kept $')}</span>
         <input type="number" step="1" className="w-qty" value={premium} onChange={(e) => setPremium(e.target.value)} />
       </label>
 
       {buysBack && (
         <label className="control">
-          <span>Cost to close $</span>
+          <span>{tr('Cost to close $')}</span>
           <input
             type="number"
             step="0.01"
@@ -741,18 +739,18 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
             value={closeCost}
             placeholder="0"
             onChange={(e) => setCloseCost(e.target.value)}
-            title="What you paid to buy it back. Leave blank if it expired worthless."
+            title={tr('What you paid to buy it back. Leave blank if it expired worthless.')}
           />
         </label>
       )}
 
       {buysBack && closeCost !== '' && (
-        <span className="muted small settle-kept">Kept {signed(kept)}</span>
+        <span className="muted small settle-kept">{tr('Kept ')}{signed(kept)}</span>
       )}
 
       {status === 'assigned' && (
         <label className="control">
-          <span>Assignment loss $</span>
+          <span>{tr('Assignment loss $')}</span>
           <input type="number" step="1" className="w-qty" value={assignmentLoss} onChange={(e) => setLoss(e.target.value)} />
         </label>
       )}
@@ -760,11 +758,11 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
       {status === 'rolled' && (
         <>
           <label className="control">
-            <span>Rolled to</span>
+            <span>{tr('Rolled to')}</span>
             <input type="date" value={rolledToExpiration} onChange={(e) => setRollExp(e.target.value)} />
           </label>
           <label className="control">
-            <span>New short</span>
+            <span>{tr('New short')}</span>
             <input
               type="number"
               step="0.5"
@@ -778,17 +776,16 @@ function SettleForm({ position, busy, onCancel, onSettle }) {
 
       <div className="form-actions">
         <button type="submit" className="primary" disabled={busy}>
-          Record
+          {tr('Record')}
         </button>
         <button type="button" onClick={onCancel}>
-          Cancel
+          {tr('Cancel')}
         </button>
       </div>
 
       {status === 'rolled' && (
         <p className="muted small">
-          Recording a roll settles this row. Add the new leg separately, with this date as its Opened
-          date — the results report pairs the two into one roll, net of the cost to close.
+          {tr('Recording a roll settles this row. Add the new leg separately, with this date as its Opened date — the results report pairs the two into one roll, net of the cost to close.')}
         </p>
       )}
     </form>
@@ -806,16 +803,16 @@ function SimulateLink({ position }) {
   if (!params) return null;
 
   const { exact, ...query } = params;
-  const label = POSITION_TYPES[position.type]?.label ?? position.type;
+  const label = tr(POSITION_TYPES[position.type]?.label) ?? position.type;
 
   return (
     <a
       className="link-button"
       href={hrefFor('simulator', query)}
-      title={exact ? undefined : `The simulator cannot draw a ${label.toLowerCase()} yet — this opens ${position.symbol} only`}
-      aria-label={exact ? `Simulate this ${position.symbol} position` : `Simulate ${position.symbol} (symbol only)`}
+      title={exact ? undefined : tr('The simulator cannot draw a {0} yet — this opens {1} only', [label.toLowerCase(), position.symbol])}
+      aria-label={exact ? tr('Simulate this {0} position', [position.symbol]) : tr('Simulate {0} (symbol only)', [position.symbol])}
     >
-      {exact ? 'Simulate' : 'Simulate symbol'}
+      {exact ? tr('Simulate') : tr('Simulate symbol')}
     </a>
   );
 }

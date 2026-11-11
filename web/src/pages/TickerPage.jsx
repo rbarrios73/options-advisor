@@ -8,6 +8,7 @@ import { compact, price as fmtPrice } from '../format.js';
 import PriceChart from '../components/PriceChart.jsx';
 import ForecastPanel from '../components/ForecastPanel.jsx';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * Look up one symbol: what it costs now, and what it has done over a period.
  *
@@ -70,24 +71,24 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
       <div className="page-head">
         <form className="lookup" onSubmit={submit}>
           <label className="sr-only" htmlFor="ticker-symbol">
-            Symbol
+            {tr('Symbol')}
           </label>
           <input
             id="ticker-symbol"
             className="w-symbol"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            placeholder="SPY"
+            placeholder={tr('SPY')}
             autoComplete="off"
             spellCheck="false"
           />
           <button type="submit" className="primary">
-            Look up
+            {tr('Look up')}
           </button>
         </form>
 
         {watchlist.length > 0 && (
-          <nav className="chips" aria-label="Watchlist">
+          <nav className="chips" aria-label={tr('Watchlist')}>
             {watchlist.map((w) => (
               <button
                 key={w.symbol}
@@ -125,7 +126,7 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
                 chart, where the period is visible — the two differ, and reading one as the
                 other is how a flat day looks like a rally. */}
             <span className="quote-change">
-              {signedPrice(quote.change)} ({signedPct(quote.changePct)}) today
+              {signedPrice(quote.change)} ({signedPct(quote.changePct)}{tr(') today')}
             </span>
           </div>
 
@@ -142,11 +143,11 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
                 }
               >
                 {/* Named, because with several lists "add to watchlist" does not say which. */}
-                {listed ? `Remove from ${listName ?? 'watchlist'}` : `Add to ${listName ?? 'watchlist'}`}
+                {listed ? tr('Remove from {0}', [listName ?? tr('watchlist')]) : tr('Add to {0}', [listName ?? tr('watchlist')])}
               </button>
             )}
             <a className="button" href={hrefFor('simulator', { symbol })}>
-              Open in simulator
+              {tr('Open in simulator')}
             </a>
           </div>
         </header>
@@ -155,7 +156,7 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
       <div className={loading ? 'ticker-body stale' : 'ticker-body'}>
         <section className="chart-pane">
           <div className="chart-head">
-            <div className="segmented" role="group" aria-label="Range">
+            <div className="segmented" role="group" aria-label={tr('Range')}>
               {Object.entries(RANGES).map(([key, { label }]) => (
                 <button
                   key={key}
@@ -171,7 +172,7 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
 
             {series && (
               <span className="muted small">
-                {signedPrice(series.change)} ({signedPct(series.changePct)}) over {RANGES[range].label}
+                {signedPrice(series.change)} ({signedPct(series.changePct)}{tr(') over ')}{tr(RANGES[range].label)}
                 {' · '}
                 {series.points} {intervalNoun(range)}
               </span>
@@ -180,22 +181,22 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
 
           {series ? (
             <>
-              <PriceChart bars={series.bars} rangeLabel={RANGES[range].label} />
+              <PriceChart bars={series.bars} rangeLabel={tr(RANGES[range].label)} />
 
               {/* The chart is a picture; this is the same data as text, for anyone the picture
                   does not reach and for anyone who wants the numbers rather than the shape. */}
               <details className="series-table">
-                <summary className="muted small">{series.points} closes as a table</summary>
+                <summary className="muted small">{series.points}{tr(' closes as a table')}</summary>
                 <div className="scroll-y">
                   <table>
                     <caption className="muted small">
-                      {quote?.symbol ?? symbol} closes, {series.first.date} to {series.last.date}
+                      {quote?.symbol ?? symbol}{tr(' closes, ')}{series.first.date}{tr(' to ')}{series.last.date}
                     </caption>
                     <thead>
                       <tr>
-                        <th scope="col">Date</th>
-                        <th scope="col" className="num">Close</th>
-                        <th scope="col" className="num">Volume</th>
+                        <th scope="col">{tr('Date')}</th>
+                        <th scope="col" className="num">{tr('Close##price')}</th>
+                        <th scope="col" className="num">{tr('Volume')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -212,32 +213,32 @@ export default function TickerPage({ watchlist = [], listName, onWatchlist, para
               </details>
             </>
           ) : (
-            !loading && !error && <p className="muted">No price history for {symbol}.</p>
+            !loading && !error && <p className="muted">{tr('No price history for ')}{symbol}.</p>
           )}
         </section>
 
         <aside className="stats-pane">
-          <h4>Today</h4>
+          <h4>{tr('Today')}</h4>
           <dl className="facts">
-            <Fact label="Open" value={fmtPrice(quote?.open)} />
-            <Fact label="Day range" value={rangeText(quote?.low, quote?.high)} />
-            <Fact label="Previous close" value={fmtPrice(quote?.prevClose)} />
-            <Fact label="Bid / Ask" value={`${fmtPrice(quote?.bid)} / ${fmtPrice(quote?.ask)}`} />
-            <Fact label="Volume" value={compact(quote?.volume)} />
-            <Fact label="Average volume" value={compact(quote?.averageVolume)} />
-            <Fact label="52-week range" value={rangeText(quote?.week52Low, quote?.week52High)} />
+            <Fact label={tr('Open##price')} value={fmtPrice(quote?.open)} />
+            <Fact label={tr('Day range')} value={rangeText(quote?.low, quote?.high)} />
+            <Fact label={tr('Previous close')} value={fmtPrice(quote?.prevClose)} />
+            <Fact label={tr('Bid / Ask')} value={`${fmtPrice(quote?.bid)} / ${fmtPrice(quote?.ask)}`} />
+            <Fact label={tr('Volume')} value={compact(quote?.volume)} />
+            <Fact label={tr('Average volume')} value={compact(quote?.averageVolume)} />
+            <Fact label={tr('52-week range')} value={rangeText(quote?.week52Low, quote?.week52High)} />
           </dl>
 
           {series && (
             <>
-              <h4>Over {RANGES[range].label}</h4>
+              <h4>{tr('Over ')}{tr(RANGES[range].label)}</h4>
               <dl className="facts">
-                <Fact label="Period high" value={fmtPrice(series.high.price)} hint={onDate(series.high.date)} />
-                <Fact label="Period low" value={fmtPrice(series.low.price)} hint={onDate(series.low.date)} />
-                <Fact label="Change" value={`${signedPrice(series.change)} (${signedPct(series.changePct)})`} />
-                <Fact label="Average volume" value={compact(series.averageVolume)} />
+                <Fact label={tr('Period high')} value={fmtPrice(series.high.price)} hint={onDate(series.high.date)} />
+                <Fact label={tr('Period low')} value={fmtPrice(series.low.price)} hint={onDate(series.low.date)} />
+                <Fact label={tr('Change')} value={`${signedPrice(series.change)} (${signedPct(series.changePct)})`} />
+                <Fact label={tr('Average volume')} value={compact(series.averageVolume)} />
                 <Fact
-                  label="Off the high"
+                  label={tr('Off the high')}
                   value={signedPct((series.last.close - series.high.price) / series.high.price)}
                 />
               </dl>
@@ -280,11 +281,11 @@ const signedPct = (v) => (has(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).t
 
 /** "22 May 2026" reads as a date at a glance; "2026-05-22" reads as a serial number. */
 const onDate = (iso) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString(dateLocale(), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     timeZone: 'UTC',
   });
 
-const intervalNoun = (range) => (RANGES[range]?.interval === 'weekly' ? 'weeks' : 'trading days');
+const intervalNoun = (range) => (RANGES[range]?.interval === 'weekly' ? 'weeks' : tr('trading days'));

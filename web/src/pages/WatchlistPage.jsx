@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { hrefFor } from '../router.js';
 import { price as fmtPrice } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * The watchlists: several named lists, one of them live.
  *
@@ -82,15 +83,15 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
 
     const entry = cleanEntry({ symbol: typed, note });
     if (!entry) {
-      setProblem(`“${typed.trim()}” is not a ticker — letters and dots, up to six of them.`);
+      setProblem(tr('“{0}” is not a ticker — letters and dots, up to six of them.', [typed.trim()]));
       return;
     }
     if (watchlist.some((w) => w.symbol === entry.symbol)) {
-      setProblem(`${entry.symbol} is already on the list.`);
+      setProblem(tr('{0} is already on the list.', [entry.symbol]));
       return;
     }
     if (watchlist.length >= MAX_SYMBOLS) {
-      setProblem(`That is the limit of ${MAX_SYMBOLS} — a scan costs provider requests per symbol.`);
+      setProblem(tr('That is the limit of {0} — a scan costs provider requests per symbol.', [MAX_SYMBOLS]));
       return;
     }
 
@@ -135,33 +136,30 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
     <div className="watchlist-page">
       <div className="page-head">
         <p className="muted small">
-          Keep as many lists as you like — the one you pick here is the one the screener scans.
-          Notes are for you; the earnings date is not — set it and the screener flags any expiry
-          that lands after it, which is the most common way a short premium position goes wrong.
+          {tr('Keep as many lists as you like — the one you pick here is the one the screener scans. Notes are for you; the earnings date is not — set it and the screener flags any expiry that lands after it, which is the most common way a short premium position goes wrong.')}
           {accounts
-            ? ' These lists are yours: they are stored per account, and nobody else’s changes touch them.'
-            : ' This copy runs without accounts, so the lists are saved to a file beside the app.'}
+            ? tr(' These lists are yours: they are stored per account, and nobody else’s changes touch them.')
+            : tr(' This copy runs without accounts, so the lists are saved to a file beside the app.')}
         </p>
 
         <p className="muted small" aria-live="polite">
           {saved === 'saving'
-            ? 'Saving…'
+            ? tr('Saving…')
             : saved === 'saved'
-              ? 'Saved'
+              ? tr('Saved')
               : `${watchlist.length} ${watchlist.length === 1 ? 'symbol' : 'symbols'}`}
         </p>
       </div>
 
       {guest && (
         <p className="notice small guest-note">
-          This is the starter watchlist the screener scans for visitors.{' '}
-          <a href="#/signup">Create a free account</a> or <a href="#/signin">sign in</a> to keep your
-          own lists — add and reorder tickers, write notes and set earnings dates.
+          {tr('This is the starter watchlist the screener scans for visitors.')}{' '}
+          <a href="#/signup">{tr('Create a free account')}</a>{tr(' or ')}<a href="#/signin">{tr('sign in')}</a>{tr(' to keep your own lists — add and reorder tickers, write notes and set earnings dates.')}
         </p>
       )}
 
       {!guest && (
-      <nav className="lists" aria-label="Watchlists">
+      <nav className="lists" aria-label={tr('Watchlists')}>
         {watchlists.map((list) => (
           <button
             key={list.id}
@@ -180,9 +178,9 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
             type="button"
             className="chip new"
             disabled={busy}
-            onClick={() => run(() => lists.create('New list'))}
+            onClick={() => run(() => lists.create(tr('New list')))}
           >
-            + New list
+            {tr('+ New list')}
           </button>
         )}
       </nav>
@@ -195,10 +193,10 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
           <button
             type="button"
             disabled={busy || watchlists.length >= MAX_LISTS}
-            onClick={() => run(() => lists.create(`${active.name} copy`, active.entries))}
-            title={watchlists.length >= MAX_LISTS ? `That is the limit of ${MAX_LISTS} watchlists.` : undefined}
+            onClick={() => run(() => lists.create(tr('{0} copy', [active.name]), active.entries))}
+            title={watchlists.length >= MAX_LISTS ? tr('That is the limit of {0} watchlists.', [MAX_LISTS]) : undefined}
           >
-            Duplicate
+            {tr('Duplicate')}
           </button>
 
           {/* No confirmation dialog: a list is a handful of tickers and a name, the symbols are
@@ -207,9 +205,9 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
             type="button"
             disabled={busy || watchlists.length === 1}
             onClick={() => run(() => lists.remove(active.id))}
-            title={watchlists.length === 1 ? 'Your only watchlist — empty it instead.' : undefined}
+            title={watchlists.length === 1 ? tr('Your only watchlist — empty it instead.') : undefined}
           >
-            Delete list
+            {tr('Delete list')}
           </button>
         </div>
       )}
@@ -219,7 +217,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
       {!guest && (
       <form className="add-row" onSubmit={add}>
         <label>
-          <span className="muted small">Ticker</span>
+          <span className="muted small">{tr('Ticker')}</span>
           <input
             value={typed}
             onChange={(e) => {
@@ -227,7 +225,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
               setProblem(null);
               setPending(null);
             }}
-            placeholder="SPY"
+            placeholder={tr('SPY')}
             className="w-symbol"
             maxLength={6}
             autoComplete="off"
@@ -237,17 +235,17 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
         </label>
 
         <label className="grow">
-          <span className="muted small">Note (optional)</span>
+          <span className="muted small">{tr('Note (optional)')}</span>
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Why it is on the list"
+            placeholder={tr('Why it is on the list')}
             maxLength={200}
           />
         </label>
 
         <button type="submit" className="primary" disabled={checking || !SYMBOL_PATTERN.test(typed.trim().toUpperCase())}>
-          {checking ? 'Checking…' : 'Add'}
+          {checking ? tr('Checking…') : tr('Add')}
         </button>
       </form>
       )}
@@ -257,7 +255,7 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
           {problem}
           {pending && (
             <button type="button" className="link-button" onClick={() => add(null, true)}>
-              Add {pending.symbol} anyway
+              {tr('Add ')}{pending.symbol}{tr(' anyway')}
             </button>
           )}
         </p>
@@ -265,26 +263,24 @@ export default function WatchlistPage({ watchlist, watchlists, activeId, onWatch
 
       {watchlist.length === 0 ? (
         <p className="muted">
-          Nothing on {active ? `“${active.name}”` : 'this list'}. Add a ticker above — until then a
-          scan has nothing to look at.
+          {tr('Nothing on ')}{active ? `“${active.name}”` : tr('this list')}{tr('. Add a ticker above — until then a scan has nothing to look at.')}
         </p>
       ) : (
         // Disabled as a whole for a guest: the table still reads, nothing in it edits.
         <fieldset className="plain-fieldset scroll-x" disabled={guest}>
           <table className="watchlist-table">
             <caption className="muted small">
-              Scanned in this order. Prices come from the same cache as a scan, so showing them
-              here costs nothing extra.
+              {tr('Scanned in this order. Prices come from the same cache as a scan, so showing them here costs nothing extra.')}
             </caption>
             <thead>
               <tr>
-                <th scope="col">Order</th>
-                <th scope="col">Symbol</th>
-                <th scope="col" className="num">Last</th>
-                <th scope="col">Note</th>
-                <th scope="col">Earnings</th>
+                <th scope="col">{tr('Order')}</th>
+                <th scope="col">{tr('Symbol')}</th>
+                <th scope="col" className="num">{tr('Last')}</th>
+                <th scope="col">{tr('Note')}</th>
+                <th scope="col">{tr('Earnings')}</th>
                 <th scope="col">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{tr('Actions')}</span>
                 </th>
               </tr>
             </thead>
@@ -330,7 +326,7 @@ function ListName({ list, busy, onRename }) {
 
   return (
     <label className="list-name">
-      <span className="sr-only">Watchlist name</span>
+      <span className="sr-only">{tr('Watchlist name')}</span>
       <input
         value={name}
         onChange={(event) => setName(event.target.value)}
@@ -341,7 +337,7 @@ function ListName({ list, busy, onRename }) {
         }}
         maxLength={MAX_NAME}
         disabled={busy}
-        aria-label="Watchlist name"
+        aria-label={tr('Watchlist name')}
       />
     </label>
   );
@@ -370,10 +366,10 @@ function Row({ entry, index, last, quote, onMove, onPatch, onRemove }) {
     <tr>
       <td className="order-cell">
         <span className="muted small">{index + 1}</span>
-        <button type="button" className="link" disabled={index === 0} onClick={() => onMove(index, -1)} aria-label={`Move ${entry.symbol} up`}>
+        <button type="button" className="link" disabled={index === 0} onClick={() => onMove(index, -1)} aria-label={tr('Move {0} up', [entry.symbol])}>
           ↑
         </button>
-        <button type="button" className="link" disabled={last} onClick={() => onMove(index, 1)} aria-label={`Move ${entry.symbol} down`}>
+        <button type="button" className="link" disabled={last} onClick={() => onMove(index, 1)} aria-label={tr('Move {0} down', [entry.symbol])}>
           ↓
         </button>
       </td>
@@ -389,7 +385,7 @@ function Row({ entry, index, last, quote, onMove, onPatch, onRemove }) {
           <span className="muted">…</span>
         ) : quote.error ? (
           <span className="tag warn" title={quote.error}>
-            no quote
+            {tr('no quote')}
           </span>
         ) : (
           fmtPrice(quote.last)
@@ -403,7 +399,7 @@ function Row({ entry, index, last, quote, onMove, onPatch, onRemove }) {
           onBlur={commit}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           maxLength={200}
-          aria-label={`Note for ${entry.symbol}`}
+          aria-label={tr('Note for {0}', [entry.symbol])}
           placeholder="—"
         />
       </td>
@@ -414,8 +410,8 @@ function Row({ entry, index, last, quote, onMove, onPatch, onRemove }) {
           className="earnings"
           value={entry.earnings ?? ''}
           onChange={(e) => onPatch(entry.symbol, { earnings: e.target.value || null })}
-          aria-label={`Earnings date for ${entry.symbol}`}
-          title="Expiries after this date get flagged on every candidate"
+          aria-label={tr('Earnings date for {0}', [entry.symbol])}
+          title={tr('Expiries after this date get flagged on every candidate')}
         />
       </td>
 
@@ -425,12 +421,12 @@ function Row({ entry, index, last, quote, onMove, onPatch, onRemove }) {
         <a
           className="link-button"
           href={hrefFor('simulator', { symbol: entry.symbol })}
-          aria-label={`Simulate a position on ${entry.symbol}`}
+          aria-label={tr('Simulate a position on {0}', [entry.symbol])}
         >
-          Simulate
+          {tr('Simulate')}
         </a>
-        <button type="button" onClick={() => onRemove(entry.symbol)} aria-label={`Remove ${entry.symbol}`}>
-          Remove
+        <button type="button" onClick={() => onRemove(entry.symbol)} aria-label={tr('Remove {0}', [entry.symbol])}>
+          {tr('Remove')}
         </button>
       </td>
     </tr>

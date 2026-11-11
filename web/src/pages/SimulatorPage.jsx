@@ -28,6 +28,7 @@ import PnlGrid from '../components/PnlGrid.jsx';
 import RiskAlerts from '../components/RiskAlerts.jsx';
 import AdjustmentsPanel from '../components/AdjustmentsPanel.jsx';
 
+import { tr } from '../i18n.js';
 const TARGET_DTE = 35;
 
 /**
@@ -363,8 +364,8 @@ export default function SimulatorPage({ watchlist, params }) {
     : true;
   const projectedDate = position ? addDays(position.asOf, sim.daysForward) : null;
   const projectedLabel = position
-    ? `${sim.daysForward === 0 ? 'Today' : `${shortDate(projectedDate)} · T+${sim.daysForward}`}${
-        ivShift ? ` · IV ${signedNumber(ivShift, 0)}` : ''
+    ? `${sim.daysForward === 0 ? tr('Today') : `${shortDate(projectedDate)} · T+${sim.daysForward}`}${
+        ivShift ? tr(' · IV {0}', [signedNumber(ivShift, 0)]) : ''
       }`
     : '';
 
@@ -373,27 +374,26 @@ export default function SimulatorPage({ watchlist, params }) {
         ...position.legs.map((leg, i) => ({
           key: `leg${i}`,
           label:
-            position.legs.length > 1 ? (leg.action === 'sell' ? 'Short' : 'Long') : leg.type === 'call' ? 'Call' : 'Put',
+            position.legs.length > 1 ? (leg.action === 'sell' ? tr('Short') : tr('Long')) : leg.type === 'call' ? tr('Call') : tr('Put'),
           value: leg.strike,
           kind: 'strike',
         })),
         ...breakEvens(position).map((value, i) => ({ key: `be${i}`, label: 'BE', value, kind: 'be' })),
-        { key: 'spot', label: 'Spot', value: position.spot, kind: 'spot' },
+        { key: 'spot', label: tr('Spot'), value: position.spot, kind: 'spot' },
       ]
     : [];
 
   return (
     <div className="simulator">
       <p className="muted small page-intro">
-        {strategy.blurb} Choose it by delta or by strike, then drag the date and IV to see what
-        closing it early would look like.
+        {tr(strategy.blurb)}{tr(' Choose it by delta or by strike, then drag the date and IV to see what closing it early would look like.')}
       </p>
 
       {/* Inputs, in one row above everything they scope. */}
       <form className="controls" onSubmit={(e) => e.preventDefault()}>
         <div className="control">
-          <span>Strategy</span>
-          <div className="segmented" role="radiogroup" aria-label="Strategy">
+          <span>{tr('Strategy')}</span>
+          <div className="segmented" role="radiogroup" aria-label={tr('Strategy')}>
             {Object.entries(STRATEGIES).map(([key, { label }]) => (
               <button
                 key={key}
@@ -403,14 +403,14 @@ export default function SimulatorPage({ watchlist, params }) {
                 className={kind === key ? 'on' : ''}
                 onClick={() => switchStrategy(key)}
               >
-                {label}
+                {tr(label)}
               </button>
             ))}
           </div>
         </div>
 
         <label className="control">
-          <span>Symbol</span>
+          <span>{tr('Symbol')}</span>
           <input
             list="sim-symbols"
             value={symbolDraft}
@@ -419,7 +419,7 @@ export default function SimulatorPage({ watchlist, params }) {
             onKeyDown={(e) => e.key === 'Enter' && commitSymbol()}
             maxLength={6}
             className="w-symbol"
-            aria-label="Symbol"
+            aria-label={tr('Symbol')}
           />
           <datalist id="sim-symbols">
             {watchlist.map((w) => (
@@ -429,7 +429,7 @@ export default function SimulatorPage({ watchlist, params }) {
         </label>
 
         <label className="control">
-          <span>Expiry</span>
+          <span>{tr('Expiry')}</span>
           <select value={expiration ?? ''} onChange={(e) => setExpiration(e.target.value)} disabled={!expiryList}>
             {(expiryList ?? []).map((e) => (
               <option key={e.date} value={e.date}>
@@ -440,8 +440,8 @@ export default function SimulatorPage({ watchlist, params }) {
         </label>
 
         <div className="control">
-          <span>Choose by</span>
-          <div className="segmented" role="radiogroup" aria-label="Choose the contract by">
+          <span>{tr('Choose by')}</span>
+          <div className="segmented" role="radiogroup" aria-label={tr('Choose the contract by')}>
             {['delta', 'strike'].map((mode) => (
               <button
                 key={mode}
@@ -451,7 +451,7 @@ export default function SimulatorPage({ watchlist, params }) {
                 className={by === mode ? 'on' : ''}
                 onClick={() => switchMode(mode)}
               >
-                {mode === 'delta' ? 'Delta' : 'Strike'}
+                {mode === 'delta' ? tr('Delta') : tr('Strike')}
               </button>
             ))}
           </div>
@@ -460,7 +460,7 @@ export default function SimulatorPage({ watchlist, params }) {
         {by === 'delta' ? (
           <label className="control">
             <span>
-              {strategy.deltaLabel} <strong>{targetDelta.toFixed(2)}</strong>
+              {tr(strategy.deltaLabel)} <strong>{targetDelta.toFixed(2)}</strong>
             </span>
             <input
               type="range"
@@ -474,7 +474,7 @@ export default function SimulatorPage({ watchlist, params }) {
           </label>
         ) : (
           <label className="control">
-            <span>{strategy.strikeLabel}</span>
+            <span>{tr(strategy.strikeLabel)}</span>
             <select
               value={(strategy.legs === 2 ? position?.short.strike : position?.legs[0].strike) ?? ''}
               onChange={(e) => setStrike(Number(e.target.value))}
@@ -489,7 +489,7 @@ export default function SimulatorPage({ watchlist, params }) {
               ).map((k) => (
                 <option key={k} value={k}>
                   {price(k)}
-                  {chain && inTheMoney(strategy.side, k, chain.spot) ? ' (ITM)' : ''}
+                  {chain && inTheMoney(strategy.side, k, chain.spot) ? tr(' (ITM)') : ''}
                 </option>
               ))}
             </select>
@@ -498,7 +498,7 @@ export default function SimulatorPage({ watchlist, params }) {
 
         {strategy.legs === 2 && (
           <label className="control">
-            <span>Width</span>
+            <span>{tr('Width')}</span>
             <select
               value={position ? round2(position.width) : width}
               onChange={(e) => setWidth(Number(e.target.value))}
@@ -513,7 +513,7 @@ export default function SimulatorPage({ watchlist, params }) {
         )}
 
         <label className="control">
-          <span>Contracts</span>
+          <span>{tr('Contracts')}</span>
           <input
             type="number"
             min="1"
@@ -525,8 +525,8 @@ export default function SimulatorPage({ watchlist, params }) {
         </label>
 
         <div className="control">
-          <span>Entry price</span>
-          <div className="segmented" role="radiogroup" aria-label="Entry price">
+          <span>{tr('Entry price')}</span>
+          <div className="segmented" role="radiogroup" aria-label={tr('Entry price')}>
             {strategy.entryLabels.map(([key, label]) => (
               <button
                 key={key}
@@ -539,14 +539,14 @@ export default function SimulatorPage({ watchlist, params }) {
                   setFill('');
                 }}
               >
-                {label}
+                {tr(label)}
               </button>
             ))}
           </div>
         </div>
 
         <label className="control">
-          <span>Or your fill</span>
+          <span>{tr('Or your fill')}</span>
           <input
             type="number"
             step="0.01"
@@ -555,15 +555,15 @@ export default function SimulatorPage({ watchlist, params }) {
             value={fill}
             onChange={(e) => setFill(e.target.value)}
             className="w-qty"
-            title={`The ${credit ? 'credit' : 'debit'} per share you were actually filled at`}
+            title={tr('The {0} per share you were actually filled at', [credit ? tr('credit') : tr('debit')])}
           />
         </label>
       </form>
 
       {error && <p className="error">{error}</p>}
       {sim?.error && <p className="error">{sim.error}</p>}
-      {sim?.picked?.note && <p className="warning small">{sim.picked.note}</p>}
-      {!chain && !error && <p className="muted">Loading the chain…</p>}
+      {sim?.picked?.note && <p className="warning small">{tr(sim.picked.note)}</p>}
+      {!chain && !error && <p className="muted">{tr('Loading the chain…')}</p>}
 
       {position && (
         // Refetch keeps the frame: while a new chain loads, the old render stays, dimmed.
@@ -577,7 +577,7 @@ export default function SimulatorPage({ watchlist, params }) {
               <div className="chart-head">
                 <h2>{describe(position, chain)}</h2>
                 <span className="muted small">
-                  {chain.symbol} {price(chain.spot)} · ATM IV {pct(chain.atmIv)} · {dte} days
+                  {chain.symbol} {price(chain.spot)}{tr(' · ATM IV ')}{pct(chain.atmIv)} · {dte}{tr(' days')}
                 </span>
 
                 {/* On the title line, not a thousand pixels down the page between two panels,
@@ -604,9 +604,9 @@ export default function SimulatorPage({ watchlist, params }) {
               <div className="whatif">
                 <label className="control grow">
                   <span>
-                    Date <strong>{sim.daysForward === 0 ? 'Today' : shortDate(projectedDate)}</strong>{' '}
+                    {tr('Date ')}<strong>{sim.daysForward === 0 ? tr('Today') : shortDate(projectedDate)}</strong>{' '}
                     <span className="muted">
-                      T+{sim.daysForward} · {dte - sim.daysForward} days left
+                      T+{sim.daysForward} · {dte - sim.daysForward}{tr(' days left')}
                     </span>
                   </span>
                   <input
@@ -621,9 +621,9 @@ export default function SimulatorPage({ watchlist, params }) {
 
                 <label className="control grow">
                   <span>
-                    IV change <strong>{signedNumber(ivShift, 0)} pts</strong>{' '}
+                    {tr('IV change ')}<strong>{signedNumber(ivShift, 0)}{tr(' pts')}</strong>{' '}
                     <span className="muted">
-                      {position.legs.length > 1 ? 'short leg' : 'this contract'} {pct(position.legs[0].iv)} →{' '}
+                      {position.legs.length > 1 ? tr('short leg') : tr('this contract')} {pct(position.legs[0].iv)} →{' '}
                       {pct(Math.max(position.legs[0].iv + ivShift / 100, 0.01))}
                     </span>
                   </span>
@@ -638,7 +638,7 @@ export default function SimulatorPage({ watchlist, params }) {
                 </label>
 
                 <button type="button" onClick={resetWhatIf} disabled={!sim.daysForward && !ivShift}>
-                  Reset
+                  {tr('Reset')}
                 </button>
               </div>
 
@@ -647,49 +647,49 @@ export default function SimulatorPage({ watchlist, params }) {
                   any window under 1100px, a long scroll from the thing it is talking about.
                   No colour: the sign already says the direction, and red/green is the one pair a
                   colour-blind reader cannot split. */}
-              <dl className="greeks" aria-label={`Position greeks ${sim.daysForward === 0 && !ivShift ? 'now' : 'at the what-if point'}`}>
+              <dl className="greeks" aria-label={tr('Position greeks {0}', [sim.daysForward === 0 && !ivShift ? tr('now') : tr('at the what-if point')])}>
                 <Greek
-                  label="Delta"
+                  label={tr('Delta')}
                   value={signedNumber(sim.greeks.delta, 1)}
-                  hint="$ per $1 move up"
+                  hint={tr('$ per $1 move up')}
                 />
-                <Greek label="Theta" value={signedNumber(sim.greeks.theta, 2)} hint="$ per day" />
-                <Greek label="Vega" value={signedNumber(sim.greeks.vega, 2)} hint="$ per IV point" />
-                <Greek label="Gamma" value={signedNumber(sim.greeks.gamma, 3)} hint="delta change per $1" />
+                <Greek label={tr('Theta')} value={signedNumber(sim.greeks.theta, 2)} hint={tr('$ per day')} />
+                <Greek label={tr('Vega')} value={signedNumber(sim.greeks.vega, 2)} hint={tr('$ per IV point')} />
+                <Greek label={tr('Gamma')} value={signedNumber(sim.greeks.gamma, 3)} hint={tr('delta change per $1')} />
               </dl>
 
-              <h3 className="exposure-title">Exposure</h3>
-              <dl className="greeks exposure" aria-label="Exposure">
+              <h3 className="exposure-title">{tr('Exposure')}</h3>
+              <dl className="greeks exposure" aria-label={tr('Exposure')}>
                 <Greek
-                  label="Behaves like"
-                  value={`${signedNumber(sim.exposure.shareEquivalent, 0)} sh`}
-                  hint={`${signed(sim.exposure.dollarDelta)} of ${chain.symbol}`}
+                  label={tr('Behaves like')}
+                  value={tr('{0} sh', [signedNumber(sim.exposure.shareEquivalent, 0)])}
+                  hint={tr('{0} of {1}', [signed(sim.exposure.dollarDelta), chain.symbol])}
                 />
                 <Greek
-                  label="If it rises 1%"
+                  label={tr('If it rises 1%')}
                   value={signed(sim.exposure.upOnePct)}
-                  hint={`falls 1%: ${signed(sim.exposure.downOnePct)}`}
+                  hint={tr('falls 1%: {0}', [signed(sim.exposure.downOnePct)])}
                 />
                 <Greek
-                  label="Typical day"
+                  label={tr('Typical day')}
                   value={`±${money(sim.exposure.oneDayMove)}`}
-                  hint={`a one-sigma day, ±${price(sim.exposure.daySigma)}`}
+                  hint={tr('a one-sigma day, ±{0}', [price(sim.exposure.daySigma)])}
                 />
                 <Greek
-                  label="Theta a day"
+                  label={tr('Theta a day')}
                   value={sim.exposure.thetaShare == null ? '—' : pct(sim.exposure.thetaShare, 1)}
-                  hint={credit ? 'of the credit' : 'of what was paid'}
+                  hint={credit ? tr('of the credit') : tr('of what was paid')}
                 />
-                <Greek label="Capital at risk" value={money(sim.exposure.capitalAtRisk)} hint="the max loss" />
+                <Greek label={tr('Capital at risk')} value={money(sim.exposure.capitalAtRisk)} hint={tr('the max loss')} />
               </dl>
 
               <p className="muted small greeks-note">
                 {credit
-                  ? 'A credit spread collects theta and is short vega: time passing helps, a jump in implied vol hurts.'
-                  : 'A long option pays theta and is long vega: time passing hurts, a jump in implied vol helps.'}{' '}
+                  ? tr('A credit spread collects theta and is short vega: time passing helps, a jump in implied vol hurts.')
+                  : tr('A long option pays theta and is long vega: time passing hurts, a jump in implied vol helps.')}{' '}
                 {sim.daysForward === 0 && !ivShift
-                  ? 'These are the values now.'
-                  : `These are the values at ${projectedLabel}.`}
+                  ? tr('These are the values now.')
+                  : tr('These are the values at {0}.', [projectedLabel])}
               </p>
             </section>
 
@@ -699,68 +699,67 @@ export default function SimulatorPage({ watchlist, params }) {
                 this is P&L across DAYS at one price, which is the shape a slider cannot show. */}
             <section className="panel decay-panel">
               <div className="chart-head">
-                <h2>What time alone does</h2>
-                <span className="muted small">at {price(position.spot)}, implied vol unchanged</span>
+                <h2>{tr('What time alone does')}</h2>
+                <span className="muted small">{tr('at ')}{price(position.spot)}{tr(', implied vol unchanged')}</span>
               </div>
 
               <DecayChart curve={sim.decay.curve} daysForward={sim.daysForward} />
 
               <dl className="greeks decay-facts">
                 <Greek
-                  label="Time is worth"
+                  label={tr('Time is worth')}
                   value={signed(sim.decay.total)}
-                  hint={`by ${shortDate(position.expiration)} if nothing moves`}
+                  hint={tr('by {0} if nothing moves', [shortDate(position.expiration)])}
                 />
                 <Greek
-                  label="Final week"
+                  label={tr('Final week')}
                   value={signed(sim.decay.lastWeek)}
                   hint={
                     sim.decay.lastWeekShare === null
-                      ? 'of that total'
-                      : `${pct(sim.decay.lastWeekShare, 0)} of the whole`
+                      ? tr('of that total')
+                      : tr('{0} of the whole', [pct(sim.decay.lastWeekShare, 0)])
                   }
                 />
                 <Greek
-                  label="Halfway"
+                  label={tr('Halfway')}
                   value={sim.decay.halfwayDay === null ? '—' : `T+${sim.decay.halfwayDay}`}
                   hint={
                     sim.decay.halfwayDate === null
-                      ? 'nothing to decay'
-                      : `${shortDate(sim.decay.halfwayDate)} — half of it is done`
+                      ? tr('nothing to decay')
+                      : tr('{0} — half of it is done', [shortDate(sim.decay.halfwayDate)])
                   }
                 />
               </dl>
 
               <p className="muted small greeks-note">
-                {DECAY_SHAPES[sim.decay.shape]}{' '}
-                <strong>This holds the price still</strong>, which it will not be — so read it as what
-                waiting is worth, not as what the position will make.
+                {tr(DECAY_SHAPES[sim.decay.shape])}{' '}
+                <strong>{tr('This holds the price still')}</strong>{tr(', which it will not be — so read it as what waiting is worth, not as what the position will make.')}
               </p>
             </section>
 
             <section className="panel">
-              <h2>{position.legs.length > 1 ? 'Legs' : 'Contract'}</h2>
+              <h2>{position.legs.length > 1 ? tr('Legs') : tr('Contract')}</h2>
               {/* Nine columns do not fit a phone; scroll the table, not the page. */}
               <div className="scroll-x">
                 <table className="legs">
                   <thead>
                     <tr>
-                      <th>Action</th>
-                      <th>Strike</th>
-                      <th>Bid</th>
-                      <th>Ask</th>
-                      <th>Mid</th>
-                      <th>Delta</th>
-                      <th>IV</th>
-                      <th>OI</th>
-                      <th>Vol</th>
+                      <th>{tr('Action')}</th>
+                      <th>{tr('Strike')}</th>
+                      <th>{tr('Bid')}</th>
+                      <th>{tr('Ask')}</th>
+                      <th>{tr('Mid')}</th>
+                      <th>{tr('Delta')}</th>
+                      <th>{tr('IV')}</th>
+                      <th>{tr('OI')}</th>
+                      <th>{tr('Vol')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {position.legs.map((leg) => (
                       <tr key={`${leg.action}-${leg.type}-${leg.strike}`} className={leg.action}>
                         <td>
-                          {leg.action} {quantity} {leg.type}
+                          {tr(leg.action === 'sell' ? 'sell' : 'buy')} {quantity} {leg.type}
                         </td>
                         <td>{price(leg.strike)}</td>
                         <td>{price(leg.bid)}</td>
@@ -778,7 +777,7 @@ export default function SimulatorPage({ watchlist, params }) {
             </section>
 
             <section className="panel">
-              <h2>P&amp;L by price and date</h2>
+              <h2>{tr('P&L by price and date')}</h2>
               <PnlGrid grid={sim.grid} />
             </section>
           </div>
@@ -789,99 +788,95 @@ export default function SimulatorPage({ watchlist, params }) {
                   above; the pricing warnings are in the risk alerts. This panel keeps the detail. */}
               <dl className="facts">
                 <Fact
-                  label={credit ? 'Credit' : 'Debit'}
-                  value={`${price(credit ? s.credit : s.debit)} /sh`}
+                  label={credit ? tr('Credit') : tr('Debit')}
+                  value={tr('{0} /sh', [price(credit ? s.credit : s.debit)])}
                   hint={
                     position.entry.source === 'override'
-                      ? 'your fill'
+                      ? tr('your fill')
                       : position.entry.source === 'mid'
-                        ? `mid — ${credit ? 'bid/ask' : 'the ask'} gives ${price(Math.abs(s.netConservative))}`
-                        : `${credit ? 'bid/ask' : 'the ask'} — mid would be ${price(Math.abs(s.netMid))}`
+                        ? tr('mid — {0} gives {1}', [credit ? tr('bid/ask') : tr('the ask'), price(Math.abs(s.netConservative))])
+                        : tr('{0} — mid would be {1}', [credit ? tr('bid/ask') : tr('the ask'), price(Math.abs(s.netMid))])
                   }
                 />
                 {credit ? (
-                  <Fact label="Return on risk" value={pct(s.returnOnRisk)} hint="max profit ÷ max loss" />
+                  <Fact label={tr('Return on risk')} value={pct(s.returnOnRisk)} hint={tr('max profit ÷ max loss')} />
                 ) : (
-                  <Fact label="Move to break even" value={movePct(s.breakEven, position.spot)} hint="from today’s price" />
+                  <Fact label={tr('Move to break even')} value={movePct(s.breakEven, position.spot)} hint={tr('from today’s price')} />
                 )}
                 {/* Which side of a level the position needs is the one thing that mirrors between
                     a put spread and a call spread. The numbers already mirror; these words have to
                     as well, or the page states the opposite of what it just computed. */}
                 {credit && (
                   <Fact
-                    label="Keep the full credit"
+                    label={tr('Keep the full credit')}
                     value={sim.reliability.reliable ? pct(s.probMaxProfit) : '—'}
-                    hint={`finishes ${wantsAbove ? 'above' : 'below'} short strike`}
+                    hint={tr('finishes {0} short strike', [wantsAbove ? tr('above') : tr('below')])}
                   />
                 )}
                 <Fact
-                  label={credit ? 'Lose the maximum' : 'Expires worthless'}
+                  label={credit ? tr('Lose the maximum') : tr('Expires worthless')}
                   value={sim.reliability.reliable ? pct(s.probMaxLoss) : '—'}
                   hint={
                     credit
-                      ? `finishes ${wantsAbove ? 'below' : 'above'} long strike`
-                      : `finishes ${wantsAbove ? 'below' : 'above'} the strike`
+                      ? tr('finishes {0} long strike', [wantsAbove ? tr('below') : tr('above')])
+                      : tr('finishes {0} the strike', [wantsAbove ? tr('below') : tr('above')])
                   }
                 />
                 {credit && (
                   <Fact
-                    label="Expected value"
+                    label={tr('Expected value')}
                     value={sim.reliability.reliable ? signed(s.expectedValue) : '—'}
-                    hint="two-outcome, like the screener"
+                    hint={tr('two-outcome, like the screener')}
                   />
                 )}
                 <Fact
-                  label="Expected move by expiry"
+                  label={tr('Expected move by expiry')}
                   value={`±${price(s.expectedMove)}`}
-                  hint="one standard deviation"
+                  hint={tr('one standard deviation')}
                 />
               </dl>
 
               {!credit && (
                 <p className="muted small">
-                  No expected value here: a long option&rsquo;s upside is a distribution, not one of
-                  two outcomes, so the screener&rsquo;s crude version would be worse than nothing.
+                  {tr('No expected value here: a long option’s upside is a distribution, not one of two outcomes, so the screener’s crude version would be worse than nothing.')}
                 </p>
               )}
             </section>
 
             <section className="panel">
-              <h2>{sim.daysForward === 0 && !ivShift ? 'Right now' : projectedLabel}</h2>
+              <h2>{sim.daysForward === 0 && !ivShift ? tr('Right now') : projectedLabel}</h2>
               <dl className="facts">
                 <Fact
-                  label={`P&L if ${chain.symbol} is unchanged`}
+                  label={tr('P&L if {0} is unchanged', [chain.symbol])}
                   value={<span className={sim.atSpot >= 0 ? 'pos' : 'neg'}>{signed(Math.round(sim.atSpot))}</span>}
-                  hint={`closing at ${price(position.spot)}`}
+                  hint={tr('closing at {0}', [price(position.spot)])}
                 />
               </dl>
 
               {sim.unrealized && (
                 <dl className="facts">
                   <Fact
-                    label="Unrealized, closing now"
+                    label={tr('Unrealized, closing now')}
                     value={<span className={sim.unrealized.conservative >= 0 ? 'pos' : 'neg'}>{signed(sim.unrealized.conservative)}</span>}
-                    hint={`${credit ? 'buy back' : 'sell'} at ${price(Math.abs(sim.unrealized.closeCost))} — bid/ask`}
+                    hint={tr('{0} at {1} — bid/ask', [credit ? tr('buy back') : tr('sell'), price(Math.abs(sim.unrealized.closeCost))])}
                   />
                   <Fact
-                    label="Unrealized at mid"
+                    label={tr('Unrealized at mid')}
                     value={signed(sim.unrealized.mid)}
-                    hint={`at ${price(Math.abs(sim.unrealized.closeCostMid))}`}
+                    hint={tr('at {0}', [price(Math.abs(sim.unrealized.closeCostMid))])}
                   />
                 </dl>
               )}
 
               {sim.daysForward === 0 && !ivShift && sim.atSpot < 0 && !sim.unrealized && (
                 <p className="muted small">
-                  Negative on day one is expected: you {credit ? 'sold at the bid and bought at the ask' : 'paid the ask'},
-                  and the position is marked at its model value in between.
+                  {tr('Negative on day one is expected: you ')}{credit ? tr('sold at the bid and bought at the ask') : tr('paid the ask')}{tr(', and the position is marked at its model value in between.')}
                 </p>
               )}
             </section>
 
             <p className="muted small">
-              Before expiry these are Black-Scholes values from each leg&rsquo;s own IV, so they are
-              only as good as that vol. Dividends are ignored, and listed options are American — an
-              option deep in the money can be assigned early, which this model cannot show.
+              {tr('Before expiry these are Black-Scholes values from each leg’s own IV, so they are only as good as that vol. Dividends are ignored, and listed options are American — an option deep in the money can be assigned early, which this model cannot show.')}
             </p>
           </aside>
         </div>
@@ -901,24 +896,24 @@ export default function SimulatorPage({ watchlist, params }) {
 function AtAGlance({ sim, credit, wantsAbove }) {
   const { summary: s, position, reliability, unrealized } = sim;
   return (
-    <dl className="glance" aria-label="Position at a glance">
-      <GlanceTile label="Days to expiry" value={String(position.dte)} hint={shortDate(position.expiration)} />
+    <dl className="glance" aria-label={tr('Position at a glance')}>
+      <GlanceTile label={tr('Days to expiry')} value={String(position.dte)} hint={shortDate(position.expiration)} />
       <GlanceTile
-        label="Max profit"
-        value={s.maxProfit === null ? 'No cap' : money(s.maxProfit)}
+        label={tr('Max profit')}
+        value={s.maxProfit === null ? tr('No cap') : money(s.maxProfit)}
         // A long put's maximum is the strike going to zero. True, and misleading as a headline
         // unless it says so — nobody is pricing SPY at $0.
-        hint={position.kind === 'long_put' ? 'if it goes to zero' : credit ? 'keep the whole credit' : 'no ceiling above break-even'}
+        hint={position.kind === 'long_put' ? tr('if it goes to zero') : credit ? tr('keep the whole credit') : tr('no ceiling above break-even')}
       />
-      <GlanceTile label="Max loss" value={money(s.maxLoss)} hint={credit ? 'width less the credit' : 'what was paid'} />
-      <GlanceTile label="Break-even" value={price(s.breakEven)} hint={`${movePct(s.breakEven, position.spot)} from ${price(position.spot)}`} />
+      <GlanceTile label={tr('Max loss')} value={money(s.maxLoss)} hint={credit ? tr('width less the credit') : tr('what was paid')} />
+      <GlanceTile label={tr('Break-even')} value={price(s.breakEven)} hint={tr('{0} from {1}', [movePct(s.breakEven, position.spot), price(position.spot)])} />
       <GlanceTile
-        label="Win probability"
+        label={tr('Win probability')}
         value={reliability.reliable ? pct(s.probProfit, 0) : '—'}
-        hint={reliability.reliable ? `finishes ${wantsAbove ? 'above' : 'below'} break-even` : 'not shown — see the alerts'}
+        hint={reliability.reliable ? tr('finishes {0} break-even', [wantsAbove ? tr('above') : tr('below')]) : tr('not shown — see the alerts')}
       />
       <GlanceTile
-        label="Unrealized P/L"
+        label={tr('Unrealized P/L')}
         value={unrealized ? signed(unrealized.conservative) : '—'}
         tone={unrealized ? (unrealized.conservative >= 0 ? 'pos' : 'neg') : undefined}
         hint={
@@ -926,11 +921,11 @@ function AtAGlance({ sim, credit, wantsAbove }) {
           // lose — "−262% of max profit" is true and unreadable.
           unrealized
             ? unrealized.conservative >= 0 && unrealized.shareOfMaxProfit != null
-              ? `${pct(unrealized.shareOfMaxProfit, 0)} of max profit, closing now`
+              ? tr('{0} of max profit, closing now', [pct(unrealized.shareOfMaxProfit, 0)])
               : unrealized.conservative < 0 && unrealized.shareOfMaxLoss != null
-                ? `${pct(unrealized.shareOfMaxLoss, 0)} of max loss, closing now`
-                : 'closing now at bid/ask'
-            : 'enter your fill to see it'
+                ? tr('{0} of max loss, closing now', [pct(unrealized.shareOfMaxLoss, 0)])
+                : tr('closing now at bid/ask')
+            : tr('enter your fill to see it')
         }
       />
     </dl>
@@ -986,7 +981,7 @@ function describe(position, chain) {
   if (position.legs.length > 1) {
     // The leg's own type, not a hardcoded "put": a call spread titled "put spread" is a label
     // that contradicts the chart beneath it.
-    return `${chain.symbol} ${price(position.short.strike)}/${price(position.long.strike)} ${position.short.type} spread · ${when}`;
+    return tr('{0} {1}/{2} {3} spread · {4}', [chain.symbol, price(position.short.strike), price(position.long.strike), position.short.type, when]);
   }
   const [leg] = position.legs;
   return `${chain.symbol} ${price(leg.strike)} ${leg.type} · ${when}`;

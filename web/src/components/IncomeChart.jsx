@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 
 import { cash } from '../format.js';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * Projected income, one column per month.
  *
@@ -35,7 +36,7 @@ export default function IncomeChart({ payments, months, asOf, perShare = false }
   const peakIsUnique = values.filter((v) => v.value === peak).length === 1;
 
   if (peak <= 0) {
-    return <p className="muted small">Nothing is projected to pay in this window.</p>;
+    return <p className="muted small">{tr('Nothing is projected to pay in this window.')}</p>;
   }
 
   // Geometry in user units; the SVG scales to its box. Taller than it is per-column wide, so a
@@ -63,7 +64,7 @@ export default function IncomeChart({ payments, months, asOf, perShare = false }
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={`Projected income by month, ${values.length} months from ${asOf}. Highest month ${cash(peak, dp)}.`}
+        aria-label={tr('Projected income by month, {0} months from {1}. Highest month {2}.', [values.length, asOf, cash(peak, dp)])}
         onMouseLeave={() => setHover(null)}
       >
         <defs>
@@ -144,18 +145,19 @@ export default function IncomeChart({ payments, months, asOf, perShare = false }
       <figcaption className="muted small">
         {hover ? (
           <span>
-            <strong>{hover.long}</strong> — {hover.value > 0 ? cash(hover.value, dp) : 'nothing due'}
-            {perShare ? ' per share' : ''}
+            <strong>{hover.long}</strong> — {hover.value > 0 ? cash(hover.value, dp) : tr('nothing due')}
+            {perShare ? tr(' per share') : ''}
           </span>
         ) : (
-          <span>Each column is one month’s payments. Hover for the figure.</span>
+          <span>{tr('Each column is one month’s payments. Hover for the figure.')}</span>
         )}
       </figcaption>
     </figure>
   );
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Month names in the page's language, asked for when used rather than fixed at load.
+const monthName = (i) => new Date(Date.UTC(2024, i, 15)).toLocaleDateString(dateLocale(), { month: 'short', timeZone: 'UTC' });
 
 function monthsFrom(asOf, count) {
   const start = new Date(`${asOf}T00:00:00Z`);
@@ -168,8 +170,8 @@ function monthsFrom(asOf, count) {
     out.push({
       key: d.toISOString().slice(0, 7),
       // The year on January, so a 36-month chart does not show "Jan" three times unlabelled.
-      label: month === 0 ? `${MONTHS[month]} ’${String(d.getUTCFullYear()).slice(2)}` : MONTHS[month],
-      long: `${MONTHS[month]} ${d.getUTCFullYear()}`,
+      label: month === 0 ? `${monthName(month)} ’${String(d.getUTCFullYear()).slice(2)}` : monthName(month),
+      long: `${monthName(month)} ${d.getUTCFullYear()}`,
     });
   }
   return out;

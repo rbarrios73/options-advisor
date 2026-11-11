@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { cash, money, pct, price, shortDate } from '../format.js';
 import IncomeChart from '../components/IncomeChart.jsx';
 
+import { tr } from '../i18n.js';
 /**
  * What the names you follow pay, and what the shares you hold will pay you.
  *
@@ -61,7 +62,7 @@ export default function DividendsPage({ guest = false }) {
   };
 
   if (!data) {
-    return <p className="muted">{error ? <span className="error">{error}</span> : 'Loading…'}</p>;
+    return <p className="muted">{error ? <span className="error">{error}</span> : tr('Loading…')}</p>;
   }
 
   const { rows, totals, asOf } = data;
@@ -71,37 +72,35 @@ export default function DividendsPage({ guest = false }) {
   return (
     <section className="dividends">
       <p className="muted small page-intro">
-        What each name pays, ranked, and what your shares will pay you. Rates are the latest
-        declared payment annualised — a projection assumes it does not change, which is an
-        assumption and not a forecast. The risk column is where the reasons it might change live.
+        {tr('What each name pays, ranked, and what your shares will pay you. Rates are the latest declared payment annualised — a projection assumes it does not change, which is an assumption and not a forecast. The risk column is where the reasons it might change live.')}
       </p>
 
       {error && <p className="error">{error}</p>}
 
       <div className="tiles">
         <div className="tile">
-          <span className="tile-label">Income a year, at today’s rates</span>
+          <span className="tile-label">{tr('Income a year, at today’s rates')}</span>
           <span className="tile-value">{money(totals.annualIncome)}</span>
-          <span className="tile-hint">{money(totals.monthlyAverage)} a month averaged</span>
+          <span className="tile-hint">{money(totals.monthlyAverage)}{tr(' a month averaged')}</span>
         </div>
         <div className="tile">
-          <span className="tile-label">Yield on what they’re worth</span>
+          <span className="tile-label">{tr('Yield on what they’re worth')}</span>
           <span className="tile-value">{pct(totals.portfolioYield, 2)}</span>
           <span className="tile-hint">
-            {totals.marketValue ? `on ${money(totals.marketValue)} of stock` : 'add share counts to see this'}
+            {totals.marketValue ? tr('on {0} of stock', [money(totals.marketValue)]) : tr('add share counts to see this')}
           </span>
         </div>
         <div className="tile">
-          <span className="tile-label">Yield on what you paid</span>
+          <span className="tile-label">{tr('Yield on what you paid')}</span>
           <span className="tile-value">{pct(totals.yieldOnCost, 2)}</span>
-          <span className="tile-hint">the one that rises when a dividend is raised</span>
+          <span className="tile-hint">{tr('the one that rises when a dividend is raised')}</span>
         </div>
       </div>
 
       <div className="panel">
         <div className="dividend-controls">
           <div className="control">
-            <span className="muted small">Project ahead</span>
+            <span className="muted small">{tr('Project ahead')}</span>
             <div className="segmented">
               {data.horizons.map((m) => (
                 <button
@@ -110,20 +109,20 @@ export default function DividendsPage({ guest = false }) {
                   className={m === months ? 'on' : ''}
                   onClick={() => setMonths(m)}
                 >
-                  {m === 12 ? '1 year' : `${m / 12} years`}
+                  {m === 12 ? tr('1 year') : tr('{0} years', [m / 12])}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="control">
-            <span className="muted small">Rank by</span>
+            <span className="muted small">{tr('Rank by')}</span>
             <div className="segmented">
               {[
-                ['yield', 'Yield'],
-                ['income', 'Income'],
-                ['soonest', 'Next payment'],
-                ['symbol', 'Symbol'],
+                ['yield', tr('Yield')],
+                ['income', tr('Income')],
+                ['soonest', tr('Next payment')],
+                ['symbol', tr('Symbol')],
               ].map(([key, label]) => (
                 <button key={key} type="button" className={key === sort ? 'on' : ''} onClick={() => setSort(key)}>
                   {label}
@@ -133,24 +132,23 @@ export default function DividendsPage({ guest = false }) {
           </div>
 
           <button type="button" onClick={load} disabled={busy}>
-            {busy ? 'Refreshing…' : 'Refresh'}
+            {busy ? tr('Refreshing…') : tr('Refresh')}
           </button>
         </div>
 
         <h3 className="chart-heading">
-          Projected income, {months === 12 ? 'next 12 months' : `next ${months / 12} years`}
-          <span className="muted small"> — {money(totals.projected)} in total</span>
+          {tr('Projected income, ')}{months === 12 ? tr('next 12 months') : tr('next {0} years', [months / 12])}
+          <span className="muted small"> — {money(totals.projected)}{tr(' in total')}</span>
         </h3>
 
         {held.length === 0 ? (
           <p className="muted small">
             {guest ? (
               <>
-                <a href="#/signin">Sign in</a> and add your share counts to see the months you get
-                paid in.
+                <a href="#/signin">{tr('Sign in')}</a>{tr(' and add your share counts to see the months you get paid in.')}
               </>
             ) : (
-              'Add a share count to a row below and the months you get paid in will appear here.'
+              tr('Add a share count to a row below and the months you get paid in will appear here.')
             )}
           </p>
         ) : (
@@ -162,15 +160,15 @@ export default function DividendsPage({ guest = false }) {
         <table className="dividend-table">
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th className="num">Price</th>
-              <th className="num">Rate a year</th>
-              <th className="num">Yield</th>
-              <th>Pays</th>
-              <th>Next ex-date</th>
-              <th className="num">Your shares</th>
-              <th className="num">Your income</th>
-              <th>Dividend risk</th>
+              <th>{tr('Symbol')}</th>
+              <th className="num">{tr('Price')}</th>
+              <th className="num">{tr('Rate a year')}</th>
+              <th className="num">{tr('Yield')}</th>
+              <th>{tr('Pays')}</th>
+              <th>{tr('Next ex-date')}</th>
+              <th className="num">{tr('Your shares')}</th>
+              <th className="num">{tr('Your income')}</th>
+              <th>{tr('Dividend risk')}</th>
               <th />
             </tr>
           </thead>
@@ -192,23 +190,19 @@ export default function DividendsPage({ guest = false }) {
 
       {rows.length === 0 && (
         <p className="muted small">
-          Nothing to show yet — this page reads the active watchlist, so add a symbol there and it
-          will appear here.
+          {tr('Nothing to show yet — this page reads the active watchlist, so add a symbol there and it will appear here.')}
         </p>
       )}
 
       <p className="muted small footnote">
-        As of {asOf}. A payment is projected from the last one plus the usual gap, so dates beyond
-        the next one are approximate; the amounts assume the rate holds. Prices and payment
-        histories come from your data provider — where it has no dividend data, you can type the
-        rate yourself and the row says which of the two it is.
+        {tr('As of ')}{asOf}{tr('. A payment is projected from the last one plus the usual gap, so dates beyond the next one are approximate; the amounts assume the rate holds. Prices and payment histories come from your data provider — where it has no dividend data, you can type the rate yourself and the row says which of the two it is.')}
       </p>
     </section>
   );
 }
 
 function Row({ row, editing, onEdit, onSave, onRemove, guest }) {
-  const frequency = FREQUENCIES[row.frequency]?.label ?? '—';
+  const frequency = tr(FREQUENCIES[row.frequency]?.label) ?? '—';
 
   return (
     <>
@@ -216,8 +210,8 @@ function Row({ row, editing, onEdit, onSave, onRemove, guest }) {
         <td>
           <strong>{row.symbol}</strong>
           {row.source !== 'provider' && row.annualRate !== null && (
-            <span className="tag" title="You entered this rate — your provider had none.">
-              typed
+            <span className="tag" title={tr('You entered this rate — your provider had none.')}>
+              {tr('typed')}
             </span>
           )}
         </td>
@@ -239,11 +233,11 @@ function Row({ row, editing, onEdit, onSave, onRemove, guest }) {
           {!guest && (
           <div className="row-actions">
             <button type="button" onClick={onEdit}>
-              {editing ? 'Close' : row.tracked ? 'Edit' : 'Add shares'}
+              {editing ? tr('Close') : row.tracked ? tr('Edit') : tr('Add shares')}
             </button>
             {row.tracked && (
               <button type="button" onClick={() => onRemove(row.symbol)}>
-                Remove
+                {tr('Remove')}
               </button>
             )}
           </div>
@@ -269,15 +263,15 @@ function Row({ row, editing, onEdit, onSave, onRemove, guest }) {
  * cannot separate the hues still reads "Stretched", and a reader who can gets there faster.
  */
 function RiskCell({ risk, availability }) {
-  if (availability === 'never') return <span className="muted small">Pays no dividend</span>;
+  if (availability === 'never') return <span className="muted small">{tr('Pays no dividend')}</span>;
 
   return (
     // Every reason goes in the title as well as the first one on screen: the reasons line is
     // hidden at phone width, where it turned every row into three, and the label alone would
     // otherwise leave no way to find out why.
-    <div className={`risk risk-${risk.level}`} title={risk.reasons.join(' ')}>
-      <span className="risk-label">{risk.label ?? RISK_LABELS[risk.level]}</span>
-      {risk.reasons.length > 0 && <span className="muted small risk-why">{risk.reasons[0]}</span>}
+    <div className={`risk risk-${risk.level}`} title={risk.reasons.map((r) => tr(r)).join(' ')}>
+      <span className="risk-label">{tr(risk.label ?? RISK_LABELS[risk.level])}</span>
+      {risk.reasons.length > 0 && <span className="muted small risk-why">{tr(risk.reasons[0])}</span>}
     </div>
   );
 }
@@ -307,59 +301,58 @@ function HoldingForm({ row, onSave }) {
   return (
     <form className="holding-form" onSubmit={submit}>
       <label className="field">
-        <span>Shares</span>
+        <span>{tr('Shares')}</span>
         <input type="number" min="0" step="any" value={shares} onChange={(e) => setShares(e.target.value)} />
       </label>
 
       <label className="field">
-        <span>Average cost a share</span>
+        <span>{tr('Average cost a share')}</span>
         <input type="number" min="0" step="any" value={costBasis} onChange={(e) => setCostBasis(e.target.value)} />
-        <span className="muted small">For yield on cost. Leave blank if you would rather not.</span>
+        <span className="muted small">{tr('For yield on cost. Leave blank if you would rather not.')}</span>
       </label>
 
       {ownRate ? (
         <>
           <label className="field">
-            <span>Dividend a year, per share</span>
+            <span>{tr('Dividend a year, per share')}</span>
             <input type="number" min="0" step="any" value={annualRate} onChange={(e) => setAnnualRate(e.target.value)} />
             <span className="muted small">
-              The whole year, not one payment — $0.25 a quarter is 1.00 here.
+              {tr('The whole year, not one payment — $0.25 a quarter is 1.00 here.')}
             </span>
           </label>
 
           <label className="field">
-            <span>Pays</span>
+            <span>{tr('Pays')}</span>
             <select value={frequency} onChange={(e) => setFrequency(e.target.value)}>
               {Object.entries(FREQUENCIES).map(([key, { label }]) => (
                 <option key={key} value={key}>
-                  {label}
+                  {tr(label)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="field">
-            <span>Next ex-dividend date</span>
+            <span>{tr('Next ex-dividend date')}</span>
             <input type="date" value={nextExDate} onChange={(e) => setNextExDate(e.target.value)} />
-            <span className="muted small">The schedule is projected from this.</span>
+            <span className="muted small">{tr('The schedule is projected from this.')}</span>
           </label>
         </>
       ) : (
         <p className="muted small provider-note">
-          The rate, cadence and dates for {row.symbol} come from your data provider, so there is
-          nothing to type — {row.payments} past payments on record
-          {row.lastExDate ? `, the last on ${shortDate(row.lastExDate)}` : ''}.
+          {tr('The rate, cadence and dates for ')}{row.symbol}{tr(' come from your data provider, so there is nothing to type — ')}{row.payments}{tr(' past payments on record')}
+          {row.lastExDate ? tr(', the last on {0}', [shortDate(row.lastExDate)]) : ''}.
         </p>
       )}
 
       <label className="field wide">
-        <span>Note</span>
-        <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why you hold it" />
+        <span>{tr('Note')}</span>
+        <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr('Why you hold it')} />
       </label>
 
       <div className="row-actions">
         <button className="primary" type="submit">
-          Save
+          {tr('Save')}
         </button>
       </div>
     </form>

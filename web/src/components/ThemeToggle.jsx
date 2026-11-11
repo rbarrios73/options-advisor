@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { PICKABLE_THEMES, THEME_LABELS, prefersDark, resolveTheme, watchSystemTheme } from '../theme.js';
 
+import { tr } from '../i18n.js';
 /**
  * Light or Dark.
  *
@@ -23,11 +24,11 @@ export default function ThemeToggle({ value, onChange }) {
 
   return (
     <label className="theme-toggle">
-      <span className="sr-only">Appearance</span>
-      <select value={shown} onChange={(event) => onChange(event.target.value)} aria-label="Appearance">
+      <span className="sr-only">{tr('Appearance')}</span>
+      <select value={shown} onChange={(event) => onChange(event.target.value)} aria-label={tr('Appearance')}>
         {PICKABLE_THEMES.map((theme) => (
           <option key={theme} value={theme}>
-            {THEME_LABELS[theme]}
+            {tr(THEME_LABELS[theme])}
           </option>
         ))}
       </select>

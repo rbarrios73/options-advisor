@@ -919,6 +919,22 @@ tr.settle-row td { background: var(--sunken); white-space: normal; }
   border-color: var(--line);
 }
 
+/* --- the language control --------------------------------------------------------------------
+   Two letters each, so it costs the crowded top bar as little as it can. The chosen one is marked
+   by weight and fill, not colour alone. */
+.lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.lang-toggle button {
+  border: none;
+  border-radius: 0;
+  padding: 4px 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: var(--sunken);
+  color: var(--muted);
+}
+.lang-toggle button + button { border-left: 1px solid var(--line); }
+.lang-toggle button.on { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+
 /* On the sign-in screen it sits under the card rather than in a bar there is none of. */
 .signin-theme {
   display: flex;

@@ -12,6 +12,7 @@ import {
 import { api } from '../api.js';
 import { pct, price, shortDate } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * What the option market expects from here: the range it is pricing in, whether that is more or
  * less than the stock has really been moving, and the odds for any price you type.
@@ -56,15 +57,15 @@ export default function ForecastPanel({ symbol }) {
   if (loading && !data) {
     return (
       <section className="panel forecast">
-        <h2>Expected range</h2>
-        <p className="muted small">Reading {symbol}&rsquo;s option chains…</p>
+        <h2>{tr('Expected range')}</h2>
+        <p className="muted small">{tr('Reading ')}{symbol}{tr('’s option chains…')}</p>
       </section>
     );
   }
   if (error) {
     return (
       <section className="panel forecast">
-        <h2>Expected range</h2>
+        <h2>{tr('Expected range')}</h2>
         <p className="error small">{error}</p>
       </section>
     );
@@ -72,10 +73,9 @@ export default function ForecastPanel({ symbol }) {
   if (!data || data.expiries.length === 0) {
     return (
       <section className="panel forecast">
-        <h2>Expected range</h2>
+        <h2>{tr('Expected range')}</h2>
         <p className="muted small">
-          No usable option prices for {symbol} in the next four months, so there is no market range to
-          draw.
+          {tr('No usable option prices for ')}{symbol}{tr(' in the next four months, so there is no market range to draw.')}
         </p>
       </section>
     );
@@ -86,25 +86,24 @@ export default function ForecastPanel({ symbol }) {
 
   return (
     <section className={loading ? 'panel forecast stale' : 'panel forecast'} aria-labelledby="forecast-title">
-      <h2 id="forecast-title">Expected range</h2>
+      <h2 id="forecast-title">{tr('Expected range')}</h2>
       <p className="muted small forecast-lede">
-        The range {symbol}&rsquo;s option prices imply, from {price(data.spot)} today. It says how far
-        the market expects the price could go — not which way.
+        {tr('The range ')}{symbol}{tr('’s option prices imply, from ')}{price(data.spot)}{tr(' today. It says how far the market expects the price could go — not which way.')}
       </p>
 
       <ul className="legend" aria-hidden="true">
         <li>
-          <span className="legend-swatch forecast-swatch-line" /> Last three months
+          <span className="legend-swatch forecast-swatch-line" />{tr(' Last three months')}
         </li>
         <li>
-          <span className="legend-band forecast-swatch-one" /> 68% of outcomes
+          <span className="legend-band forecast-swatch-one" />{tr(' 68% of outcomes')}
         </li>
         <li>
-          <span className="legend-band forecast-swatch-two" /> 95% of outcomes
+          <span className="legend-band forecast-swatch-two" />{tr(' 95% of outcomes')}
         </li>
         {levelNum > 0 && (
           <li>
-            <span className="legend-swatch forecast-swatch-level" /> Your level {price(levelNum)}
+            <span className="legend-swatch forecast-swatch-level" />{tr(' Your level ')}{price(levelNum)}
           </li>
         )}
       </ul>
@@ -112,22 +111,21 @@ export default function ForecastPanel({ symbol }) {
       <ConeChart recent={data.recent} cone={cone} asOf={data.asOf} spot={data.spot} level={levelNum > 0 ? levelNum : null} />
 
       <p className="muted small forecast-caveat">
-        Real prices make big moves more often than this model allows, so treat the outer band as the
-        usual range, not the worst case.
+        {tr('Real prices make big moves more often than this model allows, so treat the outer band as the usual range, not the worst case.')}
       </p>
 
       <div className="scroll-x">
         {/* Named by aria-label, not a visually hidden caption: a 1px caption still opened a gap
             above the first row in Chrome's table layout. */}
-        <table className="forecast-table" aria-label="Expected price range by expiry">
+        <table className="forecast-table" aria-label={tr('Expected price range by expiry')}>
           <thead>
             <tr>
-              <th scope="col">Expiry</th>
-              <th scope="col" className="num">Days</th>
-              <th scope="col" className="num">Implied vol</th>
-              <th scope="col" className="num">Expected move</th>
-              <th scope="col" className="num">68% range</th>
-              <th scope="col" className="num">95% range</th>
+              <th scope="col">{tr('Expiry')}</th>
+              <th scope="col" className="num">{tr('Days')}</th>
+              <th scope="col" className="num">{tr('Implied vol')}</th>
+              <th scope="col" className="num">{tr('Expected move')}</th>
+              <th scope="col" className="num">{tr('68% range')}</th>
+              <th scope="col" className="num">{tr('95% range')}</th>
             </tr>
           </thead>
           <tbody>
@@ -179,24 +177,24 @@ function VolCompare({ data, symbol }) {
 
   return (
     <section className="forecast-sub" aria-labelledby="vol-title">
-      <h3 id="vol-title">Priced-in vs. actual movement</h3>
+      <h3 id="vol-title">{tr('Priced-in vs. actual movement')}</h3>
 
       <dl className="greeks forecast-vol">
-        <Stat label="Implied, 30 days" value={pct(implied)} hint="what options are priced for" />
-        <Stat label="Actual, 20 days" value={pct(data.realized.d20)} hint="how much it has moved" />
-        <Stat label="Actual, 60 days" value={pct(data.realized.d60)} hint="over three months" />
+        <Stat label={tr('Implied, 30 days')} value={pct(implied)} hint={tr('what options are priced for')} />
+        <Stat label={tr('Actual, 20 days')} value={pct(data.realized.d20)} hint={tr('how much it has moved')} />
+        <Stat label={tr('Actual, 60 days')} value={pct(data.realized.d60)} hint={tr('over three months')} />
       </dl>
 
       {cmp ? (
         <p className="small forecast-verdict">
           <span className={`badge tone-${cmp.verdict === 'rich' ? 'done' : cmp.verdict === 'cheap' ? 'watch' : 'muted'}`}>
-            {cmp.verdict === 'rich' ? 'Priced high' : cmp.verdict === 'cheap' ? 'Priced low' : 'In line'}
+            {cmp.verdict === 'rich' ? tr('Priced high') : cmp.verdict === 'cheap' ? tr('Priced low') : tr('In line')}
           </span>{' '}
-          Implied is {cmp.ratio}× the 20-day figure ({cmp.gapPts >= 0 ? '+' : ''}
-          {cmp.gapPts} pts). {VOL_VERDICTS[cmp.verdict]}
+          {tr('Implied is ')}{cmp.ratio}{tr('× the 20-day figure (')}{cmp.gapPts >= 0 ? '+' : ''}
+          {cmp.gapPts}{tr(' pts). ')}{tr(VOL_VERDICTS[cmp.verdict])}
         </p>
       ) : (
-        <p className="muted small">Not enough price history for {symbol} to compare.</p>
+        <p className="muted small">{tr('Not enough price history for ')}{symbol}{tr(' to compare.')}</p>
       )}
     </section>
   );
@@ -212,11 +210,11 @@ function LevelOdds({ data, symbol, level, onLevel, expiry, onExpiry }) {
 
   return (
     <section className="forecast-sub" aria-labelledby="odds-title">
-      <h3 id="odds-title">Odds for a price</h3>
+      <h3 id="odds-title">{tr('Odds for a price')}</h3>
 
       <form className="odds-form" onSubmit={(e) => e.preventDefault()}>
         <label className="field">
-          <span>Price</span>
+          <span>{tr('Price')}</span>
           <input
             type="number"
             min="0"
@@ -228,7 +226,7 @@ function LevelOdds({ data, symbol, level, onLevel, expiry, onExpiry }) {
           />
         </label>
         <label className="field">
-          <span>By</span>
+          <span>{tr('By##date')}</span>
           <select value={expiry.date} onChange={(e) => onExpiry(e.target.value)}>
             {data.expiries.map((e) => (
               <option key={e.date} value={e.date}>
@@ -237,7 +235,7 @@ function LevelOdds({ data, symbol, level, onLevel, expiry, onExpiry }) {
             ))}
           </select>
         </label>
-        <div className="odds-nudges" role="group" aria-label="Set the price relative to today">
+        <div className="odds-nudges" role="group" aria-label={tr('Set the price relative to today')}>
           {NUDGES.map((n) => (
             <button key={n} type="button" className="chip" onClick={() => onLevel(String(roundLevel(data.spot * (1 + n))))}>
               {n > 0 ? '+' : '−'}
@@ -250,22 +248,21 @@ function LevelOdds({ data, symbol, level, onLevel, expiry, onExpiry }) {
       {odds ? (
         <>
           <dl className="greeks forecast-odds" aria-live="polite">
-            <Stat label={`Ends above ${price(value)}`} value={pct(odds.above, 0)} hint={`on ${shortDate(expiry.date)}`} />
-            <Stat label={`Ends below ${price(value)}`} value={pct(odds.below, 0)} hint={`on ${shortDate(expiry.date)}`} />
+            <Stat label={tr('Ends above {0}', [price(value)])} value={pct(odds.above, 0)} hint={tr('on {0}', [shortDate(expiry.date)])} />
+            <Stat label={tr('Ends below {0}', [price(value)])} value={pct(odds.below, 0)} hint={tr('on {0}', [shortDate(expiry.date)])} />
             <Stat
-              label={`Touches ${price(value)}`}
+              label={tr('Touches {0}', [price(value)])}
               value={pct(odds.touch, 0)}
-              hint={`at any point before ${shortDate(expiry.date)}`}
+              hint={tr('at any point before {0}', [shortDate(expiry.date)])}
             />
           </dl>
           <p className="muted small">
-            {price(value)} is {pct(Math.abs(odds.move))} {odds.side === 'above' ? 'above' : 'below'} today&rsquo;s{' '}
-            {price(data.spot)}. Touching a level is roughly twice as likely as ending past it — which is
-            why a short strike gets tested more often than it finishes in the money.
+            {price(value)}{tr(' is ')}{pct(Math.abs(odds.move))} {odds.side === 'above' ? tr('above') : tr('below')}{tr(' today’s')}{' '}
+            {price(data.spot)}{tr('. Touching a level is roughly twice as likely as ending past it — which is why a short strike gets tested more often than it finishes in the money.')}
           </p>
         </>
       ) : (
-        <p className="muted small">Type a price to see the odds for {symbol}.</p>
+        <p className="muted small">{tr('Type a price to see the odds for ')}{symbol}.</p>
       )}
     </section>
   );
@@ -383,8 +380,8 @@ function ConeChart({ recent, cone, asOf, spot, level, height = 300 }) {
         role="img"
         aria-label={
           last
-            ? `Expected range: by ${shortDate(last.expiry ?? addDays(asOf, last.days))}, 68% of outcomes between ${price(last.one.low)} and ${price(last.one.high)}, 95% between ${price(last.two.low)} and ${price(last.two.high)}. The table below has every expiry.`
-            : 'Expected range chart'
+            ? tr('Expected range: by {0}, 68% of outcomes between {1} and {2}, 95% between {3} and {4}. The table below has every expiry.', [shortDate(last.expiry ?? addDays(asOf, last.days)), price(last.one.low), price(last.one.high), price(last.two.low), price(last.two.high)])
+            : tr('Expected range chart')
         }
         tabIndex={0}
         onPointerMove={(e) => setHover(dayFromPointer(e))}
@@ -407,7 +404,7 @@ function ConeChart({ recent, cone, asOf, spot, level, height = 300 }) {
 
         <line className="forecast-today" x1={todayX} x2={todayX} y1={m.top} y2={m.top + ih} />
         <text className="axis-label" x={todayX} y={m.top + ih + 18} textAnchor="middle">
-          Today
+          {tr('Today')}
         </text>
         {geo.past.length > 0 && (
           <text className="axis-label" x={geo.x(geo.past[0].d)} y={m.top + ih + 18} textAnchor="start">
@@ -470,7 +467,7 @@ function ConeChart({ recent, cone, asOf, spot, level, height = 300 }) {
               <div className="tt-head">
                 <strong>{shortDate(addDays(asOf, readout.d))}</strong>{' '}
                 <span className="muted">
-                  {readout.d} days · IV {pct(readout.iv)}
+                  {readout.d}{tr(' days · IV ')}{pct(readout.iv)}
                 </span>
               </div>
               <div className="tt-grid">

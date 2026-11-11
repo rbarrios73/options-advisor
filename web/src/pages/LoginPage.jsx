@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { MIN_PASSWORD_LENGTH } from '@domain/passwords.js';
 
 import { api } from '../api.js';
+import LanguageToggle from '../components/LanguageToggle.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
+import { tr } from '../i18n.js';
 /**
  * Signing in, and — when the deployment has sign-up open — signing up.
  *
@@ -15,7 +17,7 @@ import ThemeToggle from '../components/ThemeToggle.jsx';
  * send, and a reset without it is not a reset, it is a back door. An administrator sets a new
  * password instead — which is what the message at the bottom says, so nobody is left guessing.
  */
-export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, initialMode = 'signin', onBack, backLabel = '← About Trader Mice', reason = null }) {
+export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, initialMode = 'signin', onBack, backLabel = tr('← About Trader Mice'), reason = null }) {
   const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,12 +59,12 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
       )}
       <form className="panel signin-card" onSubmit={submit}>
         {/* The logo is the heading here, so it carries the name rather than decorating one. */}
-        <img className="signin-logo" src="/logo.png" alt="Trader Mice" width="240" height="226" />
+        <img className="signin-logo" src="/logo.png" alt={tr('Trader Mice')} width="240" height="226" />
 
         {reason && <p className="notice small signin-reason">{reason}</p>}
 
         {signupOpen ? (
-          <div className="segmented signin-modes" role="radiogroup" aria-label="Sign in or create an account">
+          <div className="segmented signin-modes" role="radiogroup" aria-label={tr('Sign in or create an account')}>
             <button
               type="button"
               role="radio"
@@ -70,7 +72,7 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
               className={signingUp ? '' : 'on'}
               onClick={() => switchTo('signin')}
             >
-              Sign in
+              {tr('Sign in')}
             </button>
             <button
               type="button"
@@ -79,15 +81,15 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
               className={signingUp ? 'on' : ''}
               onClick={() => switchTo('signup')}
             >
-              Create account
+              {tr('Create account')}
             </button>
           </div>
         ) : (
-          <p className="muted small">Sign in to see your watchlist.</p>
+          <p className="muted small">{tr('Sign in to see your watchlist.')}</p>
         )}
 
         <label className="field">
-          <span>Email</span>
+          <span>{tr('Email')}</span>
           <input
             type="email"
             autoComplete="username"
@@ -99,7 +101,7 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
         </label>
 
         <label className="field">
-          <span>Password</span>
+          <span>{tr('Password')}</span>
           <input
             type="password"
             // Telling the browser which it is lets a password manager offer to save a new one
@@ -112,8 +114,7 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
           />
           {signingUp && (
             <span className="muted small">
-              At least {MIN_PASSWORD_LENGTH} characters. A few words you will remember beats a short
-              one you will not.
+              {tr('At least ')}{MIN_PASSWORD_LENGTH}{tr(' characters. A few words you will remember beats a short one you will not.')}
             </span>
           )}
         </label>
@@ -121,21 +122,22 @@ export default function LoginPage({ onSignedIn, signupOpen, theme, onTheme, init
         {error && <p className="error small">{error}</p>}
 
         <button className="primary" type="submit" disabled={busy || !email || !password}>
-          {busy ? (signingUp ? 'Creating…' : 'Signing in…') : signingUp ? 'Create account' : 'Sign in'}
+          {busy ? (signingUp ? tr('Creating…') : tr('Signing in…')) : signingUp ? tr('Create account') : tr('Sign in')}
         </button>
 
         <p className="muted small">
           {signingUp
-            ? 'Your watchlists, positions and filters are yours alone — nobody else’s account can see them.'
-            : 'Forgotten your password? An administrator can set a new one — there is no reset email, because this app does not send mail.'}
+            ? tr('Your watchlists, positions and filters are yours alone — nobody else’s account can see them.')
+            : tr('Forgotten your password? An administrator can set a new one — there is no reset email, because this app does not send mail.')}
         </p>
       </form>
 
       {/* The appearance control belongs here too: this is the first screen a new viewer sees, and
           "I cannot read this" should not be something you have to sign in to fix. */}
       <div className="signin-theme">
-        <span className="muted small">Appearance</span>
+        <span className="muted small">{tr('Appearance')}</span>
         <ThemeToggle value={theme} onChange={onTheme} />
+        <LanguageToggle />
       </div>
     </div>
   );

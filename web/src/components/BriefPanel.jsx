@@ -5,6 +5,7 @@ import { REASONS } from '@domain/brief.js';
 import { api } from '../api.js';
 import { hrefFor } from '../router.js';
 
+import { tr } from '../i18n.js';
 /**
  * The morning brief, at the top of the home screen.
  *
@@ -49,8 +50,7 @@ export default function BriefPanel() {
     return (
       <section className="panel brief brief-empty">
         <p className="muted small">
-          The morning brief is written after 09:00 New York time on weekdays. The next one is due
-          then.
+          {tr('The morning brief is written after 09:00 New York time on weekdays. The next one is due then.')}
         </p>
       </section>
     );
@@ -63,25 +63,25 @@ export default function BriefPanel() {
     <section className={`panel brief${list.length === 0 ? ' brief-quiet' : ''}`}>
       <header className="brief-head">
         <h3>
-          Morning brief
+          {tr('Morning brief')}
           <span className="muted small"> · {day}</span>
         </h3>
 
         <div className="brief-actions">
           <span className="muted small">
             {list.length === 0
-              ? 'nothing flagged'
-              : [counts.high && `${counts.high} serious`, counts.watch && `${counts.watch} to watch`]
+              ? tr('nothing flagged')
+              : [counts.high && tr('{0} serious', [counts.high]), counts.watch && tr('{0} to watch', [counts.watch])]
                   .filter(Boolean)
                   .join(', ')}
           </span>
           {list.length > 0 && (
             <button type="button" className="link-button" onClick={() => setOpen((v) => !v)}>
-              {open ? 'Hide detail' : 'Show detail'}
+              {open ? tr('Hide detail') : tr('Show detail')}
             </button>
           )}
           <button type="button" className="link-button" onClick={() => load(true)} disabled={busy}>
-            {busy ? 'Running…' : 'Run again'}
+            {busy ? tr('Running…') : tr('Run again')}
           </button>
         </div>
       </header>
@@ -91,8 +91,8 @@ export default function BriefPanel() {
       ) : (
         <p className="muted small">
           {state.advisor
-            ? 'The written summary did not come back this morning — the findings below are the brief.'
-            : 'No ANTHROPIC_API_KEY set, so there is no written summary. The findings below are the brief.'}
+            ? tr('The written summary did not come back this morning — the findings below are the brief.')
+            : tr('No ANTHROPIC_API_KEY set, so there is no written summary. The findings below are the brief.')}
         </p>
       )}
 
@@ -100,8 +100,7 @@ export default function BriefPanel() {
         // The same check the advisor does. Shown rather than silently stripped: a summary that
         // names something nobody fed it is exactly what you want to know about.
         <p className="warn-text small">
-          The summary mentions {brief.ungrounded.join(', ')}, which {brief.ungrounded.length === 1 ? 'is' : 'are'} not
-          in the findings. Trust the list below.
+          {tr('The summary mentions ')}{brief.ungrounded.join(', ')}{tr(', which ')}{brief.ungrounded.length === 1 ? tr('is') : tr('are')}{tr(' not in the findings. Trust the list below.')}
         </p>
       )}
 
@@ -123,7 +122,7 @@ export default function BriefPanel() {
                   {/* The label, not just the colour. Every reason says what it is in words. */}
                   {finding.reasons.map((r) => (
                     <span key={r.code} className={`badge tone-${r.severity === 'high' ? 'serious' : 'warn'}`}>
-                      {r.label ?? REASONS[r.code]?.label ?? r.code}
+                      {tr(r.label ?? REASONS[r.code]?.label ?? r.code)}
                     </span>
                   ))}
                 </span>
@@ -131,7 +130,7 @@ export default function BriefPanel() {
               <ul className="finding-why">
                 {finding.reasons.map((r) => (
                   <li key={r.code} className="muted small">
-                    {r.text}
+                    {tr(r.text)}
                   </li>
                 ))}
               </ul>
@@ -141,9 +140,7 @@ export default function BriefPanel() {
       )}
 
       <p className="muted small brief-footnote">
-        Found by the app, not by a model: breached strikes, expiries inside a week, earnings and
-        ex-dividend dates before an expiry, and watchlist names that moved more than they usually
-        do. {brief.summary ? 'The model only turned that list into the sentences above.' : ''}
+        {tr('Found by the app, not by a model: breached strikes, expiries inside a week, earnings and ex-dividend dates before an expiry, and watchlist names that moved more than they usually do. ')}{brief.summary ? tr('The model only turned that list into the sentences above.') : ''}
       </p>
     </section>
   );

@@ -1,5 +1,6 @@
 import { COMPONENT_LABELS, STRATEGY_LABELS } from '../format.js';
 
+import { tr } from '../i18n.js';
 const NUMERIC = [
   { key: 'minDte', label: 'Min days to expiry', step: 1 },
   { key: 'maxDte', label: 'Max days to expiry', step: 1 },
@@ -29,7 +30,7 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
 
   return (
     <section className="panel">
-      <h2>Filters</h2>
+      <h2>{tr('Filters')}</h2>
 
       <div className="strategies">
         {Object.entries(STRATEGY_LABELS).map(([key, label]) => (
@@ -39,7 +40,7 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
               checked={(filters.strategies ?? []).includes(key)}
               onChange={() => toggleStrategy(key)}
             />
-            {label}
+            {tr(label)}
           </label>
         ))}
       </div>
@@ -47,7 +48,7 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
       <div className="grid">
         {NUMERIC.map(({ key, label, step }) => (
           <label key={key} className="field">
-            <span>{label}</span>
+            <span>{tr(label)}</span>
             <input
               type="number"
               step={step}
@@ -59,15 +60,12 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
       </div>
 
       <p className="muted small">
-        One scan costs about <strong>symbols × expiries per symbol</strong> requests. Raising
-        &ldquo;expiries per symbol&rdquo; is the usual cause of a rate-limit error mid-scan; the
-        ones kept are those closest to your preferred days to expiry.
+        {tr('One scan costs about ')}<strong>{tr('symbols × expiries per symbol')}</strong>{tr(' requests. Raising “expiries per symbol” is the usual cause of a rate-limit error mid-scan; the ones kept are those closest to your preferred days to expiry.')}
       </p>
 
-      <h3>Score weights</h3>
+      <h3>{tr('Score weights')}</h3>
       <p className="muted small">
-        These only decide the order of the table. Every underlying number is shown on each row, so
-        a candidate you disagree with can be checked rather than taken on trust.
+        {tr('These only decide the order of the table. Every underlying number is shown on each row, so a candidate you disagree with can be checked rather than taken on trust.')}
       </p>
 
       <div className="grid">
@@ -75,7 +73,7 @@ export default function Filters({ filters, weights, onFilters, onWeights }) {
           <label key={key} className="field">
             {/* The same names the expanded row's "How it scored" table uses, so a weight here
                 and the component it scales there read as one thing. */}
-            <span>{COMPONENT_LABELS[key] ?? key}</span>
+            <span>{tr(COMPONENT_LABELS[key]) ?? key}</span>
             <input
               type="number"
               step={0.05}

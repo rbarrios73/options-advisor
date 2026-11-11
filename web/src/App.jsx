@@ -5,6 +5,7 @@ import { hrefFor, pagesFor, useRoute } from './router.js';
 import { PAGES, needsSignIn } from './pages.js';
 import { forgetLastScans, loadLastScan, saveLastScan } from './lastScan.js';
 import { applyTheme, readStoredTheme, storeTheme, watchSystemTheme } from './theme.js';
+import LanguageToggle from './components/LanguageToggle.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import ScreenerPage from './pages/ScreenerPage.jsx';
 import SimulatorPage from './pages/SimulatorPage.jsx';
@@ -18,11 +19,15 @@ import UsersPage from './pages/UsersPage.jsx';
 import AuditPage from './pages/AuditPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
 
+import { rememberedLang, setLang, tr, useLang } from './i18n.js';
 export default function App() {
   const route = useRoute();
 
   // session is { accounts, user }. accounts=false is the single-user deployment, where there is
   // nothing to sign in to and `user` is a stand-in so the rest of the app needs no special case.
+  // Subscribed here so a change of language re-renders every page below.
+  useLang();
+
   const [session, setSession] = useState(null);
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
@@ -65,7 +70,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    api.me().then(setSession).catch((e) => setError(e.message));
+    api
+      .me()
+      .then((me) => {
+        // The server's guess from the visitor's country — used only until they choose for themselves.
+        setLang(rememberedLang() ?? me.lang ?? 'en');
+        setSession(me);
+      })
+      .catch((e) => setError(e.message));
   }, []);
 
   // Settings belong to whoever is signed in, so they are fetched per user and dropped on sign-out.
@@ -200,7 +212,7 @@ export default function App() {
   if (!session) {
     return (
       <main className="app">
-        {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
+        {error ? <p className="error">{error}</p> : <p className="muted">{tr('Loading…')}</p>}
       </main>
     );
   }
@@ -230,11 +242,11 @@ export default function App() {
         <LoginPage
           key={view ?? route.page}
           initialMode={view === 'signup' && session.signupOpen ? 'signup' : 'signin'}
-          reason={view ? null : `Sign in to use ${PAGES[route.page]?.label ?? 'that page'}. It works with your own trades, so it needs an account.`}
+          reason={view ? null : tr('Sign in to use {0}. It works with your own trades, so it needs an account.', [tr(PAGES[route.page]?.label) ?? tr('that page')])}
           onBack={() => {
             window.location.hash = view ? '' : hrefFor('screener');
           }}
-          backLabel={view ? '← About Trader Mice' : '← Back to the Screener'}
+          backLabel={view ? tr('← About Trader Mice') : tr('← Back to the Screener')}
           onSignedIn={signedIn}
           signupOpen={session.signupOpen}
           theme={theme}
@@ -256,10 +268,10 @@ export default function App() {
           {/* The wordmark already says the name on the sign-in screen; here the monogram sits
               beside the heading, so alt="" keeps a screen reader from reading it twice. */}
           <img src="/logo-mark.png" alt="" width="58" height="40" />
-          <h1>Trader Mice</h1>
+          <h1>{tr('Trader Mice')}</h1>
         </a>
 
-        <nav className="tabs" aria-label="Pages">
+        <nav className="tabs" aria-label={tr('Pages')}>
           {allowed.map(([key, { label }]) => {
             // Shown to a guest, not hidden: the tab is how they learn the page exists. It leads
             // to sign-in, and says so before the click rather than after.
@@ -270,13 +282,13 @@ export default function App() {
                 href={hrefFor(key)}
                 className={page === key ? 'tab active' : locked ? 'tab locked' : 'tab'}
                 aria-current={page === key ? 'page' : undefined}
-                title={locked ? 'Sign in to use this page' : undefined}
+                title={locked ? tr('Sign in to use this page') : undefined}
               >
-                {label}
+                {tr(label)}
                 {locked && (
                   <>
                     <LockIcon />
-                    <span className="sr-only"> (sign in required)</span>
+                    <span className="sr-only">{tr(' (sign in required)')}</span>
                   </>
                 )}
               </a>
@@ -285,16 +297,17 @@ export default function App() {
         </nav>
 
         <div className="who">
+          <LanguageToggle />
           <ThemeToggle value={theme} onChange={setTheme} />
 
           {guest ? (
             <>
               <a className="link-button" href="#/signin">
-                Sign in
+                {tr('Sign in')}
               </a>
               {session.signupOpen && (
                 <a className="primary button-link" href="#/signup">
-                  Create account
+                  {tr('Create account')}
                 </a>
               )}
             </>
@@ -303,7 +316,7 @@ export default function App() {
               <>
                 <span className="muted small">{user.email}</span>
                 <button type="button" className="link-button" onClick={signOut}>
-                  Sign out
+                  {tr('Sign out')}
                 </button>
               </>
             )
@@ -314,7 +327,7 @@ export default function App() {
       {error && <p className="error">{error}</p>}
 
       {!settings && page !== 'users' && page !== 'account' && page !== 'audit' ? (
-        <p className="muted">Loading…</p>
+        <p className="muted">{tr('Loading…')}</p>
       ) : page === 'users' ? (
         <UsersPage me={user} />
       ) : page === 'audit' ? (

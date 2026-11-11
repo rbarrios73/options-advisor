@@ -7,6 +7,7 @@ import { api } from '../api.js';
 import { hrefFor } from '../router.js';
 import { price, signed } from '../format.js';
 
+import { tr } from '../i18n.js';
 /**
  * Saves the position on screen to the tracker.
  *
@@ -61,12 +62,12 @@ export default function SavePosition({ position, symbol, pricedAt }) {
   if (saved) {
     return (
       <p className="saved-note small">
-        Saved to your tracker as <strong>{saved.type}</strong> {saved.symbol}{' '}
+        {tr('Saved to your tracker as ')}<strong>{saved.type}</strong> {saved.symbol}{' '}
         {price(saved.shortStrike)}
-        {saved.longStrike ? `/${price(saved.longStrike)}` : ''} at {signed(saved.premium)}.{' '}
-        <a href={hrefFor('positions')}>Open Positions</a> ·{' '}
+        {saved.longStrike ? `/${price(saved.longStrike)}` : ''}{tr(' at ')}{signed(saved.premium)}.{' '}
+        <a href={hrefFor('positions')}>{tr('Open Positions')}</a> ·{' '}
         <button type="button" className="link-button" onClick={() => setSaved(null)}>
-          Save another
+          {tr('Save another')}
         </button>
       </p>
     );
@@ -77,8 +78,8 @@ export default function SavePosition({ position, symbol, pricedAt }) {
       // No hint beside it: this sits on the chart panel's title line, which already names the
       // position, and the form says the rest the moment it opens.
       <div className="save-position">
-        <button type="button" onClick={() => setOpen(true)} title={`Record this ${type?.label.toLowerCase()} as a trade you have opened`}>
-          Save to Positions
+        <button type="button" onClick={() => setOpen(true)} title={tr('Record this {0} as a trade you have opened', [tr(type?.label)?.toLowerCase()])}>
+          {tr('Save to Positions')}
         </button>
       </div>
     );
@@ -86,17 +87,16 @@ export default function SavePosition({ position, symbol, pricedAt }) {
 
   return (
     <form className="panel save-form" onSubmit={save}>
-      <h3>Save to Positions</h3>
+      <h3>{tr('Save to Positions')}</h3>
 
       <p className="muted small">
-        {symbol} {type?.label.toLowerCase()}, {position.quantity}{' '}
-        {position.quantity === 1 ? 'contract' : 'contracts'}, expiring {position.expiration}. The
-        strikes and the expiry come from the simulation; the rest is yours to set.
+        {symbol} {tr(type?.label)?.toLowerCase()}, {position.quantity}{' '}
+        {position.quantity === 1 ? tr('contract') : tr('contracts')}{tr(', expiring ')}{position.expiration}{tr('. The strikes and the expiry come from the simulation; the rest is yours to set.')}
       </p>
 
       <div className="save-fields">
         <label className="field">
-          <span>Your fill, per share</span>
+          <span>{tr('Your fill, per share')}</span>
           <input
             type="number"
             step="0.01"
@@ -106,19 +106,19 @@ export default function SavePosition({ position, symbol, pricedAt }) {
             placeholder={Math.abs(position.entry.net).toFixed(2)}
           />
           <span className="muted small">
-            {credit ? 'Credit received' : 'Debit paid'}, as on the ticket. Blank uses the{' '}
-            {pricedAt} price, {Math.abs(position.entry.net).toFixed(2)}.
+            {credit ? tr('Credit received') : tr('Debit paid')}{tr(', as on the ticket. Blank uses the')}{' '}
+            {pricedAt}{tr(' price, ')}{Math.abs(position.entry.net).toFixed(2)}.
           </span>
         </label>
 
         <label className="field">
-          <span>Account</span>
+          <span>{tr('Account')}</span>
           <input
             type="text"
             list="save-accounts"
             value={account}
             onChange={(e) => setAccount(e.target.value)}
-            placeholder="Optional"
+            placeholder={tr('Optional')}
           />
           <datalist id="save-accounts">
             {ACCOUNTS_HINT.map((a) => (
@@ -128,17 +128,17 @@ export default function SavePosition({ position, symbol, pricedAt }) {
         </label>
 
         <label className="field">
-          <span>Trade date</span>
+          <span>{tr('Trade date')}</span>
           <input type="date" value={tradeDate} onChange={(e) => setTradeDate(e.target.value)} />
         </label>
 
         <label className="field wide">
-          <span>Note</span>
+          <span>{tr('Note')}</span>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Why you opened it"
+            placeholder={tr('Why you opened it')}
           />
         </label>
       </div>
@@ -147,17 +147,17 @@ export default function SavePosition({ position, symbol, pricedAt }) {
 
       <div className="row-actions">
         <button className="primary" type="submit" disabled={busy}>
-          {busy ? 'Saving…' : `Save at ${signed(row.premium)}`}
+          {busy ? tr('Saving…') : tr('Save at {0}', [signed(row.premium)])}
         </button>
         <button type="button" onClick={() => setOpen(false)} disabled={busy}>
-          Cancel
+          {tr('Cancel')}
         </button>
         <span className="muted small">
           {/* The sign is the thing most likely to look wrong, so it is explained before it is
               stored rather than queried afterwards. */}
           {credit
-            ? 'A credit is stored positive — it counts towards your goals when you close it.'
-            : 'A debit is stored negative: what you paid comes off the total, which is what happened.'}
+            ? tr('A credit is stored positive — it counts towards your goals when you close it.')
+            : tr('A debit is stored negative: what you paid comes off the total, which is what happened.')}
         </span>
       </div>
     </form>

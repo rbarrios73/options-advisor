@@ -8,6 +8,8 @@
 // wrapped and a failure means "nothing kept" — never an error over the page. And a restored scan
 // is always shown with its age, because yesterday's credit is not today's.
 
+import { tr } from './i18n.js';
+
 const PREFIX = 'oa:lastScan:';
 
 const keyFor = (userId, listId) => `${PREFIX}${userId ?? 'local'}:${listId ?? 'default'}`;
@@ -51,12 +53,12 @@ export function forgetLastScans(userId) {
 /** How old a scan is, in words a person reads at a glance: "4 min", "2 h", "3 days". */
 export function ageOf(iso, now = Date.now()) {
   const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return tr('just now');
+  if (minutes < 60) return tr('{0} min ago', [minutes]);
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return tr('{0} h ago', [hours]);
   const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  return days === 1 ? tr('1 day ago') : tr('{0} days ago', [days]);
 }
 
 /** Older than this, a scan's prices have moved enough to say so. */

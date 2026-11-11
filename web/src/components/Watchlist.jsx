@@ -1,5 +1,6 @@
 import { hrefFor } from '../router.js';
 
+import { tr } from '../i18n.js';
 /**
  * What this scan will look at — read only.
  *
@@ -12,11 +13,11 @@ export default function Watchlist({ watchlist, name }) {
     <section className="panel">
       {/* The name, not just "Watchlist": with several lists, which one this is is the thing
           worth knowing while a scan is running. */}
-      <h2>{name ?? 'Watchlist'}</h2>
+      <h2>{name ?? tr('Watchlist')}</h2>
 
       {watchlist.length === 0 ? (
         <p className="muted">
-          Nothing on the list — a scan has nothing to look at. <a href={hrefFor('watchlist')}>Add a ticker</a>.
+          {tr('Nothing on the list — a scan has nothing to look at. ')}<a href={hrefFor('watchlist')}>{tr('Add a ticker')}</a>.
         </p>
       ) : (
         <>
@@ -30,7 +31,7 @@ export default function Watchlist({ watchlist, name }) {
                 {/* Only the dates that are set, and only as text. An earnings date is the one
                     field here that changes what the scan reports, so it is worth seeing. */}
                 {entry.earnings && (
-                  <span className="muted small" title="Expiries after this are flagged">
+                  <span className="muted small" title={tr('Expiries after this are flagged')}>
                     {entry.earnings}
                   </span>
                 )}
@@ -39,7 +40,7 @@ export default function Watchlist({ watchlist, name }) {
           </ul>
 
           <p className="muted small">
-            <a href={hrefFor('watchlist')}>Edit the watchlist</a>
+            <a href={hrefFor('watchlist')}>{tr('Edit the watchlist')}</a>
           </p>
         </>
       )}

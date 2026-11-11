@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { compact, price as fmtPrice } from '../format.js';
 
+import { dateLocale, tr } from '../i18n.js';
 /**
  * A price line over time, with a crosshair that reads out the bar under the pointer.
  *
@@ -74,7 +75,7 @@ export default function PriceChart({ bars, height = 320, rangeLabel }) {
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Price over ${rangeLabel}: ${fmtPrice(openPrice)} on ${bars[0].date} to ${fmtPrice(bars.at(-1).close)} on ${bars.at(-1).date}. The table of values is below.`}
+        aria-label={tr('Price over {0}: {1} on {2} to {3} on {4}. The table of values is below.', [rangeLabel, fmtPrice(openPrice), bars[0].date, fmtPrice(bars.at(-1).close), bars.at(-1).date])}
         tabIndex={0}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHoverIdx(null)}
@@ -123,17 +124,17 @@ export default function PriceChart({ bars, height = 320, rangeLabel }) {
             <strong>{fmtPrice(hover.close)}</strong> <span className="muted">{longDate(hover.date)}</span>
           </div>
           <div className="tt-grid">
-            <span className="muted">Open</span>
+            <span className="muted">{tr('Open##price')}</span>
             <span>{fmtPrice(hover.open)}</span>
-            <span className="muted">High</span>
+            <span className="muted">{tr('High')}</span>
             <span>{fmtPrice(hover.high)}</span>
-            <span className="muted">Low</span>
+            <span className="muted">{tr('Low')}</span>
             <span>{fmtPrice(hover.low)}</span>
-            <span className="muted">Volume</span>
+            <span className="muted">{tr('Volume')}</span>
             <span>{compact(hover.volume)}</span>
           </div>
           <div className="tt-since muted">
-            {signedPct(hover.close / openPrice - 1)} since {shortLabel(bars[0].date)}
+            {signedPct(hover.close / openPrice - 1)}{tr(' since ')}{shortLabel(bars[0].date)}
           </div>
         </div>
       )}
@@ -194,10 +195,10 @@ function dateTicks(bars, count) {
 const asDate = (iso) => new Date(`${iso}T00:00:00Z`);
 const daysBetween = (a, b) => Math.round((asDate(b) - asDate(a)) / 86_400_000);
 
-const shortLabel = (iso) => asDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const monthLabel = (iso) => asDate(iso).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-const yearLabel = (iso) => asDate(iso).toLocaleDateString('en-US', { year: 'numeric', timeZone: 'UTC' });
+const shortLabel = (iso) => asDate(iso).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const monthLabel = (iso) => asDate(iso).toLocaleDateString(dateLocale(), { month: 'short', year: '2-digit', timeZone: 'UTC' });
+const yearLabel = (iso) => asDate(iso).toLocaleDateString(dateLocale(), { year: 'numeric', timeZone: 'UTC' });
 const longDate = (iso) =>
-  asDate(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  asDate(iso).toLocaleDateString(dateLocale(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 const signedPct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(2)}%`;
