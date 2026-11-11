@@ -30,6 +30,11 @@ export const esExtra = {
   Account: 'Cuenta',
   Language: 'Idioma',
 
+  // --- positions ---
+  'Show trading results': 'Mostrar resultados de trading',
+  'Hide trading results': 'Ocultar resultados de trading',
+  'Premium, cost to close and ROI for any date range.': 'Prima, costo de cierre y ROI para cualquier rango de fechas.',
+
   // --- the same English word, two Spanish ones ---
   'By##date': 'Para el',
   'Open##action': 'Abrir',

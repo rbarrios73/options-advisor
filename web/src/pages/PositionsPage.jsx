@@ -12,6 +12,9 @@ import { tr } from '../i18n.js';
 const TYPES = Object.entries(POSITION_TYPES);
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
+// Where this browser remembers whether the results report is open.
+const RESULTS_KEY = 'tm:show-results';
+
 /**
  * What you actually have on — the tracker.
  *
@@ -25,6 +28,22 @@ export default function PositionsPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
+  const [showResults, setShowResults] = useState(() => {
+    try {
+      return localStorage.getItem(RESULTS_KEY) === '1';
+    } catch {
+      return false; // private window, storage blocked: hidden, which is the default anyway
+    }
+  });
+  const toggleResults = () =>
+    setShowResults((open) => {
+      try {
+        localStorage.setItem(RESULTS_KEY, open ? '0' : '1');
+      } catch {
+        // not remembered; it still opens
+      }
+      return !open;
+    });
 
   const load = async () => {
     try {
@@ -74,7 +93,19 @@ export default function PositionsPage() {
 
       <Goals totals={data.totals} goals={data.goals} onSave={(goals) => run(() => api.saveGoals(goals))} busy={busy} />
 
-      <PeriodReport positions={data.positions} today={data.asOf} />
+      {/* The period report is long, and most visits are to check open trades — so it stays folded
+          away until asked for. The choice is remembered in this browser. */}
+      <div className="results-toggle">
+        <button type="button" aria-expanded={showResults} aria-controls="results-report" onClick={toggleResults}>
+          {showResults ? tr('Hide trading results') : tr('Show trading results')}
+        </button>
+        {!showResults && <span className="muted small">{tr('Premium, cost to close and ROI for any date range.')}</span>}
+      </div>
+      {showResults && (
+        <div id="results-report">
+          <PeriodReport positions={data.positions} today={data.asOf} />
+        </div>
+      )}
 
       <AddPosition onAdd={(position) => run(() => api.addPosition(position))} busy={busy} />
 

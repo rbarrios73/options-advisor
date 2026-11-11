@@ -1375,3 +1375,6 @@ table.audit-table tbody th { font-weight: 600; }
   .topbar { gap: 20px; }
   .tab { padding-left: 11px; padding-right: 11px; }
 }
+
+/* --- positions: the folded-away results report ------------------------------------------------ */
+.results-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0; }
