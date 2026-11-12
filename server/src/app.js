@@ -18,6 +18,7 @@ import {
 import { migrate } from './db.js';
 import { AUDIT_EVENTS, clientOf, createAuditLog, describeAgent } from './audit.js';
 import { suggestLanguage } from './locale.js';
+import { cleanScreen, guestFilters } from './domain/query.js';
 import { UserError, createUserStore, passwordProblem } from './users.js';
 import { createProvider } from './providers/index.js';
 import { createDbStore, createFileStore, guestState } from './store.js';
@@ -125,7 +126,7 @@ export function createApp({ config, db = null }) {
     if (guestHits.size > 5000) for (const [k, v] of guestHits) if (!v.some((t) => now - t < 3_600_000)) guestHits.delete(k);
     next();
   };
-  const GUEST_SCANS_PER_HOUR = config.guestScansPerHour ?? 6;
+  const GUEST_SCANS_PER_HOUR = config.guestScansPerHour ?? 20;
   const GUEST_LOOKUPS_PER_HOUR = config.guestLookupsPerHour ?? 60;
 
   // Two guests pressing Scan at once get the one scan: they ask for the same list with the same
@@ -494,19 +495,33 @@ export function createApp({ config, db = null }) {
       const guest = isGuest(req);
       const state = await readState(req);
 
-      // A guest scans the starter list on the default filters, whatever the request says: the
-      // symbols and the expiry window are what decide how many provider requests a scan spends.
-      const symbols =
-        !guest && req.body?.symbols?.length
-          ? req.body.symbols.map((s) => String(s).toUpperCase())
-          : state.watchlist.map((w) => w.symbol);
+      // What a scan costs is provider requests, and the symbols and the expiry window decide how
+      // many. So a guest's query may narrow the starter list and the default window, and set the
+      // thresholds that are only arithmetic on chains already fetched — never widen either.
+      const listed = state.watchlist.map((w) => w.symbol);
+      const asked = Array.isArray(req.body?.symbols) ? req.body.symbols.map((s) => String(s).toUpperCase()) : [];
+      const onList = asked.filter((s) => listed.includes(s));
+      const symbols = guest ? (onList.length ? onList : listed) : asked.length ? asked : listed;
 
-      const filters = guest ? state.filters : { ...state.filters, ...(req.body?.filters ?? {}) };
+      const patch = req.body?.filters ?? {};
+      const filters = guest ? guestFilters(state.filters, patch) : { ...state.filters, ...patch };
       const weights = guest ? state.weights : { ...state.weights, ...(req.body?.weights ?? {}) };
+
+      // The parts of a described screen that are not filters: its order, its length, and leaving
+      // out anything that expires after an earnings date written on the watchlist.
+      const screen = cleanScreen(req.body?.screen);
+      const earnings = new Map(state.watchlist.map((w) => [w.symbol, w.earnings]).filter(([, e]) => e));
+      const where = screen.avoidEarnings
+        ? (c) => !(earnings.get(c.symbol) && earnings.get(c.symbol) <= c.expiration)
+        : null;
+
+      // Guests asking for the plain scan share one run of it; a guest with a query gets their own,
+      // which costs nothing extra once the chains are cached.
+      const shared = guest && onList.length === 0 && Object.keys(patch).length === 0 && Object.keys(screen).length === 0;
 
       if (req.body?.fresh && !guest) scanner.clearCache();
 
-      if (guest && guestScan) {
+      if (shared && guestScan) {
         res.json(annotateEarnings(await guestScan, state.watchlist));
         return;
       }
@@ -521,17 +536,19 @@ export function createApp({ config, db = null }) {
         symbols,
         filters,
         weights,
-        limit: guest ? 60 : Number(req.body?.limit ?? 50),
+        limit: Math.min(screen.limit ?? (guest ? 60 : Number(req.body?.limit ?? 50)), guest ? 60 : 200),
+        sort: screen.sort ?? null,
+        where,
         onProgress: ({ done, total, current }) =>
           scanProgress.set(userId, { running: true, done, total, current, startedAt }),
       });
-      if (guest) guestScan = running;
+      if (shared) guestScan = running;
 
       try {
         res.json(annotateEarnings(await running, state.watchlist));
       } finally {
         scanProgress.delete(userId);
-        if (guest) guestScan = null;
+        if (shared) guestScan = null;
       }
     }),
   );

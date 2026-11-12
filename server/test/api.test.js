@@ -162,18 +162,61 @@ test('a guest can read the public pages, on the starter list and default filters
   }
 });
 
-test('a guest scan ignores the symbols and filters it was sent', async (t) => {
+test('a guest query can narrow the scan but never widen what it fetches', async (t) => {
   const s = await startServer();
   t.after(s.close);
   const anon = s.client();
 
   const starter = (await anon('/api/settings')).body.watchlist.map((e) => e.symbol);
-  const r = await anon('/api/scan', {
+
+  // A symbol that is not on the starter list, a window far past the default one, a cache bypass.
+  const wide = await anon('/api/scan', {
     method: 'POST',
-    body: { symbols: ['NVDA'], filters: { maxDte: 900 }, fresh: true, limit: 5 },
+    body: { symbols: ['ZZZZ'], filters: { maxDte: 900, maxExpirations: 40 }, fresh: true, limit: 500 },
   });
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.body.symbols.map((x) => x.symbol), starter, 'the starter list, not the one sent');
+  assert.equal(wide.status, 200);
+  assert.deepEqual(wide.body.symbols.map((x) => x.symbol), starter, 'the starter list, not the one sent');
+  assert.equal(wide.body.filters.maxDte, 60);
+  assert.equal(wide.body.filters.maxExpirations, 4);
+  assert.ok(wide.body.candidates.length <= 60);
+
+  // Narrowing is fine: one starter symbol, one structure, a tighter window.
+  const narrow = await anon('/api/scan', {
+    method: 'POST',
+    body: { symbols: ['spy'], filters: { strategies: ['put_credit_spread'], minDte: 20, maxDte: 45 } },
+  });
+  assert.deepEqual(narrow.body.symbols.map((x) => x.symbol), ['SPY']);
+  assert.ok(narrow.body.candidates.length > 0);
+  assert.ok(narrow.body.candidates.every((c) => c.symbol === 'SPY' && c.kind === 'put_credit_spread' && c.dte >= 20 && c.dte <= 45));
+});
+
+test('a described screen orders, trims and leaves out earnings', async (t) => {
+  const s = await startServer();
+  t.after(s.close);
+  const call = s.client();
+  await call.signIn(ADMIN);
+
+  const plain = await call('/api/scan', { method: 'POST', body: { limit: 60 } });
+  assert.deepEqual(plain.body.sort, { key: 'score', dir: 'desc' });
+
+  const cheap = await call('/api/scan', { method: 'POST', body: { screen: { sort: { key: 'maxLoss', dir: 'asc' }, limit: 5 } } });
+  assert.equal(cheap.body.candidates.length, 5);
+  assert.deepEqual(cheap.body.sort, { key: 'maxLoss', dir: 'asc' });
+  const losses = cheap.body.candidates.map((c) => c.maxLoss);
+  assert.deepEqual(losses, [...losses].sort((a, b) => a - b));
+  assert.equal(cheap.body.totalCandidates, plain.body.totalCandidates, 'the order changes which rows are shown, not how many passed');
+
+  // An earnings date on the watchlist, tomorrow: every expiry is after it.
+  const settings = (await call('/api/settings')).body;
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const symbol = plain.body.candidates[0].symbol;
+  const watchlist = settings.watchlist.map((w) => (w.symbol === symbol ? { ...w, earnings: tomorrow } : w));
+  assert.equal((await call('/api/watchlist', { method: 'PUT', body: { watchlist } })).status, 200);
+
+  const kept = await call('/api/scan', { method: 'POST', body: { limit: 60, screen: { avoidEarnings: true } } });
+  assert.ok(kept.body.candidates.length > 0);
+  assert.ok(kept.body.candidates.every((c) => c.symbol !== symbol));
+  assert.ok(kept.body.totalCandidates < plain.body.totalCandidates);
 });
 
 test('guests are capped per hour; a signed-in person is not', async (t) => {

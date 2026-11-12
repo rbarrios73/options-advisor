@@ -7,6 +7,7 @@
 
 import { generateCandidates } from './domain/strategies.js';
 import { scoreCandidate, rank } from './domain/score.js';
+import { orderCandidates } from './domain/query.js';
 import { daysBetween } from './domain/math.js';
 
 /**
@@ -110,6 +111,11 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
       filters,
       weights,
       limit = 50,
+      // A screen described in words can ask for more than the filters hold: an order other than
+      // the score, and a test on each candidate that needs something the chain does not know
+      // (an earnings date typed into the watchlist).
+      sort = null,
+      where = null,
       asOf = new Date().toISOString().slice(0, 10),
       onProgress,
     }) {
@@ -149,6 +155,8 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
 
       report(symbols.length, null);
 
+      const kept = where ? all.filter(where) : all;
+
       return {
         asOf,
         provider: provider.name,
@@ -157,8 +165,9 @@ export function createScanner({ provider, cacheTtlMs = 300_000 }) {
         weights,
         symbols: perSymbol,
         failures,
-        totalCandidates: all.length,
-        candidates: rank(all, limit),
+        totalCandidates: kept.length,
+        sort: sort ?? { key: 'score', dir: 'desc' },
+        candidates: sort ? orderCandidates(kept, sort, limit) : rank(kept, limit),
       };
     },
   };

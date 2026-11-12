@@ -1,20 +1,55 @@
 import { useEffect, useState } from 'react';
 
+import { interpretQuery, withoutCondition } from '@domain/query.js';
+
 import BriefPanel from '../components/BriefPanel.jsx';
 import Watchlist from '../components/Watchlist.jsx';
 import Filters from '../components/Filters.jsx';
 import ResultsTable from '../components/ResultsTable.jsx';
 import AskPanel from '../components/AskPanel.jsx';
+import { QueryBox, Reading, Templates } from '../components/ScreenQuery.jsx';
+import { STRATEGY_LABELS } from '../format.js';
 import { STALE_AFTER_MS, ageOf } from '../lastScan.js';
 
 import { dateLocale, tr } from '../i18n.js';
 /**
  * The daily screen. Scan state lives in App, not here, so switching to the Simulator and back
  * does not throw away a scan — and does not spend another round of provider requests.
+ *
+ * You describe the screen in words. The words are read into conditions here, in the browser, by
+ * rules (domain/query.js) — so reading costs nothing and the same words always mean the same
+ * thing — and the conditions go to the scan as filters. The watchlist stays beside the results:
+ * it is what the screen runs over, and nothing outside it is scanned.
  */
 export default function ScreenerPage({ settings, onFilters, onActivate, scan, guest = false }) {
   const [showFilters, setShowFilters] = useState(false);
   const { result, scanning, progress, run } = scan;
+
+  // The box starts on the query the scan on screen was run for, including one restored from an
+  // earlier visit, so what you see and what the box says never disagree.
+  const [text, setText] = useState(result?.query?.text ?? '');
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [rowFilter, setRowFilter] = useState('');
+  useEffect(() => {
+    if (result?.query?.text != null && !text) setText(result.query.text);
+  }, [result?.generatedAt]);
+
+  const symbols = settings.watchlist.map((w) => w.symbol);
+  const query = result?.query ?? null;
+
+  const runQuery = (words, { fresh = false } = {}) => {
+    const typed = String(words ?? '').trim();
+    setText(typed);
+    setRowFilter('');
+    setShowTemplates(false);
+    run({ fresh, query: typed ? { text: typed, ...interpretQuery(typed, { symbols }) } : null });
+  };
+  // Taking a chip off takes its words out of the sentence too and runs what is left, so the box
+  // and the chips never say different things.
+  const removeCondition = (id) => runQuery(withoutCondition(query.text, query.conditions.find((c) => c.id === id)));
+  const addPhrase = (phrase) => runQuery(text.trim() ? `${text.trim()}, ${phrase}` : phrase);
+
+  const shown = result ? filterRows(result.candidates, rowFilter) : [];
 
   return (
     <>
@@ -30,44 +65,36 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
         </p>
       )}
 
-      <div className="page-head">
-        <p className="muted small">
-          {tr('Ranks the structures your filters allow, using one snapshot of the chain. It is a screener, not advice — it has never seen your account, your other positions, or anything about the company beyond its option prices. Check every number against your broker before acting on it.')}
-        </p>
-
-        <div className="actions">
-          {/* Which list is about to be scanned, changeable without leaving the page. The scan
-              follows the same choice the Watchlist tab shows, so there is one answer to "what
-              will this scan?" rather than two. */}
-          {settings.watchlists?.length > 1 && (
-            <label className="scan-scope">
-              <span className="muted small">{tr('Scanning')}</span>
-              <select
-                value={settings.activeWatchlistId ?? ''}
-                disabled={scanning}
-                onChange={(event) => onActivate(event.target.value)}
-              >
-                {settings.watchlists.map((list) => (
-                  <option key={list.id} value={list.id}>
-                    {list.name} ({list.entries.length})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <button className="primary" onClick={() => run()} disabled={scanning}>
-            {scanning ? tr('Scanning…') : tr('Scan')}
+      <QueryBox text={text} onText={setText} onRun={runQuery} scanning={scanning}>
+        {/* Bypassing the cache spends the shared rate limit, so it is an account feature. */}
+        {!guest && (
+          <button type="button" onClick={() => runQuery(text, { fresh: true })} disabled={scanning} title={tr('Ignore cached chains')}>
+            {tr('Refresh data')}
           </button>
-          {/* Bypassing the cache spends the shared rate limit, so it is an account feature. */}
-          {!guest && (
-            <button onClick={() => run({ fresh: true })} disabled={scanning} title={tr('Ignore cached chains')}>
-              {tr('Refresh data')}
-            </button>
-          )}
-          <button onClick={() => setShowFilters((v) => !v)}>{showFilters ? tr('Hide filters') : tr('Filters')}</button>
-        </div>
-      </div>
+        )}
+        <button type="button" aria-expanded={showTemplates} onClick={() => setShowTemplates((v) => !v)}>
+          {tr('Templates')}
+        </button>
+        <button type="button" aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
+          {showFilters ? tr('Hide filters') : tr('Filters')}
+        </button>
+
+        {/* Which list is about to be scanned, changeable without leaving the page. The scan
+            follows the same choice the Watchlist tab shows, so there is one answer to "what
+            will this scan?" rather than two. */}
+        {settings.watchlists?.length > 1 && (
+          <label className="scan-scope">
+            <span className="muted small">{tr('Scanning')}</span>
+            <select value={settings.activeWatchlistId ?? ''} disabled={scanning} onChange={(event) => onActivate(event.target.value)}>
+              {settings.watchlists.map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name} ({list.entries.length})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </QueryBox>
 
       <div className="layout">
         <aside>
@@ -96,13 +123,16 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
         <section className="results-pane">
           {scanning && <ScanProgress progress={progress} />}
 
+          {/* Templates are the empty state, and one click away afterwards. */}
+          {(showTemplates || (!result && !scanning)) && <Templates onRun={runQuery} scanning={scanning} />}
+
           {!result && !scanning && (
-            <p className="muted">
-              {tr('Press Scan to look at today’s chains. The first scan of the day fetches every chain fresh and takes about a minute; later ones reuse what it fetched.')}
+            <p className="muted small">
+              {tr('The first scan of the day fetches every chain fresh and takes about a minute; later ones reuse what it fetched. It is a screener, not advice — check every number against your broker before acting on it.')}
             </p>
           )}
 
-          {result && !scanning && <StaleNotice result={result} onScan={() => run()} />}
+          {result && !scanning && <StaleNotice result={result} onScan={() => runQuery(text)} />}
 
           {result && (
             <>
@@ -116,9 +146,20 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
                 <span className="muted">{scanTime(result.generatedAt)}</span>
               </div>
 
+              <Reading
+                query={query}
+                result={result}
+                filters={settings.filters}
+                guest={guest}
+                scanning={scanning}
+                onRemove={removeCondition}
+                onAdd={addPhrase}
+                onEditFilters={() => setShowFilters(true)}
+              />
+
               {result.failures.length > 0 && (
                 <p className="error small">
-                  {result.failures.map((f) => `${f.symbol}: ${f.error}`).join(' · ')}
+                  {result.failures.map((f) => `${f.symbol}: ${tr(f.error)}`).join(' · ')}
                 </p>
               )}
 
@@ -131,12 +172,31 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
 
               {result.candidates.length === 0 ? (
                 <p className="muted">
-                  {tr('Nothing passed. The filters are the usual culprit — try a lower win probability or a lower return on risk; on a quiet day nothing pays enough to clear both.')}
+                  {query?.conditions?.length
+                    ? tr('Nothing on this watchlist matches. Take a condition off above, or loosen your saved filters — on a quiet day little pays enough to clear a high bar.')
+                    : tr('Nothing passed. The filters are the usual culprit — try a lower win probability or a lower return on risk; on a quiet day nothing pays enough to clear both.')}
                 </p>
               ) : (
-                <div className="table-wrap">
-                  <ResultsTable candidates={result.candidates} />
-                </div>
+                <>
+                  <label className="row-filter">
+                    <span className="sr-only">{tr('Filter rows')}</span>
+                    <input
+                      type="search"
+                      value={rowFilter}
+                      placeholder={tr('Filter rows — a symbol, a strategy, an expiry')}
+                      onChange={(event) => setRowFilter(event.target.value)}
+                    />
+                    {rowFilter && (
+                      <span className="muted small" role="status">
+                        {tr('{0} of {1} rows', [shown.length, result.candidates.length])}
+                      </span>
+                    )}
+                  </label>
+                  <div className="table-wrap">
+                    {/* Keyed by the scan, so a new screen opens in the order it asked for. */}
+                    <ResultsTable key={result.generatedAt} candidates={shown} initialSort={result.sort} />
+                  </div>
+                </>
               )}
 
             </>
@@ -145,6 +205,16 @@ export default function ScreenerPage({ settings, onFilters, onActivate, scan, gu
       </div>
     </>
   );
+}
+
+// The box above the table: narrows the rows already on screen, without another scan.
+function filterRows(candidates, typed) {
+  const words = typed.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return candidates;
+  return candidates.filter((c) => {
+    const hay = `${c.symbol} ${tr(STRATEGY_LABELS[c.kind] ?? c.kind)} ${STRATEGY_LABELS[c.kind] ?? ''} ${c.expiration}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
 
 /**

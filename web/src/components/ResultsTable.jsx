@@ -20,8 +20,10 @@ const COLUMNS = [
   { key: 'liquidity', label: 'Liq', render: (c) => (c.liquidity ?? 0).toFixed(2), numeric: true },
 ];
 
-export default function ResultsTable({ candidates }) {
-  const [sort, setSort] = useState({ key: 'score', dir: 'desc' });
+// `initialSort` is the order the screen was asked for, so the table opens the way the server
+// ranked it; clicking a heading still re-sorts what is on screen.
+export default function ResultsTable({ candidates, initialSort }) {
+  const [sort, setSort] = useState(initialSort?.key ? initialSort : { key: 'score', dir: 'desc' });
   const [openId, setOpenId] = useState(null);
 
   const sorted = [...candidates].sort((a, b) => {

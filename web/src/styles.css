@@ -1378,3 +1378,75 @@ table.audit-table tbody th { font-weight: 600; }
 
 /* --- positions: the folded-away results report ------------------------------------------------ */
 .results-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0; }
+
+/* --- screener: describing a screen in words ------------------------------------------------------
+   The box, the chips that say how it was read, and the templates. Chips are outlined pills in the
+   text colour: what they say matters, not what colour they are. */
+.query-box { margin-bottom: 18px; }
+.query-title { display: block; font-size: 16px; font-weight: 650; margin-bottom: 2px; }
+.query-sub { margin: 0 0 10px; }
+.query-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 56px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.query-box textarea:focus { outline: none; border-color: var(--accent); }
+.query-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.query-actions .scan-scope { margin-left: auto; }
+
+.quick-screens, .follow-ups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.quick-label, .reading-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.chip-button { border-radius: 999px; padding: 4px 11px; font-size: 12px; background: var(--sunken); }
+
+.reading { margin: 0 0 14px; }
+.reading-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+/* A condition the query implied rather than stated: dashed, so it reads as an assumption. */
+.chip.implied { border-style: dashed; font-weight: 500; }
+.chip button { border: none; background: none; margin-right: -7px; padding: 0 6px; font-size: 15px; line-height: 1; color: var(--muted); border-radius: 999px; }
+.chip button:hover:not(:disabled) { color: var(--text); }
+.reading-unread { margin: 8px 0 0; }
+.base-filters { margin: 8px 0 0; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+.base-filters strong { color: var(--text); font-weight: 600; }
+.follow-ups { margin-top: 8px; }
+
+.templates { margin-bottom: 18px; }
+.templates-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+.templates-head h2 { margin: 0; }
+.template-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0; }
+.template-card { display: flex; flex-direction: column; gap: 6px; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.template-card h3 { margin: 0; font-size: 14px; }
+.template-card p { margin: 0; }
+.template-tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--accent); }
+.template-query { font-size: 12.5px; line-height: 1.45; }
+.template-card .link-button { align-self: flex-start; margin-top: auto; padding-top: 4px; font-weight: 600; }
+
+.row-filter { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+.row-filter input { flex: 1 1 260px; max-width: 420px; }

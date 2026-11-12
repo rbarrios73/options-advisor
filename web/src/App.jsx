@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import { hrefFor, pagesFor, useRoute } from './router.js';
 import { PAGES, needsSignIn } from './pages.js';
+import { screenRequest } from '@domain/query.js';
 import { forgetLastScans, loadLastScan, saveLastScan } from './lastScan.js';
 import { applyTheme, readStoredTheme, storeTheme, watchSystemTheme } from './theme.js';
 import LanguageToggle from './components/LanguageToggle.jsx';
@@ -179,7 +180,10 @@ export default function App() {
   };
   useEffect(() => stopPolling, []);
 
-  const runScan = async ({ fresh = false } = {}) => {
+  // `query` is a screen described in words, already read into conditions (see domain/query.js).
+  // It rides along with the result, so the page can show how it was read — and so a restored scan
+  // still says what it was a scan for.
+  const runScan = async ({ fresh = false, query = null } = {}) => {
     setScanning(true);
     setError(null);
     setProgress({ done: 0, total: settings?.watchlist?.length ?? 0, current: null, startedAt: new Date().toISOString() });
@@ -197,7 +201,11 @@ export default function App() {
     }, 1000);
 
     try {
-      const scanned = await api.scan({ fresh, limit: 60 });
+      const asked = screenRequest(query?.conditions);
+      const scanned = {
+        ...(await api.scan({ fresh, limit: 60, symbols: asked.symbols ?? undefined, filters: asked.filters, screen: asked.screen })),
+        query,
+      };
       setResult(scanned);
       saveLastScan(user?.id ?? 'guest', activeListId, scanned);
     } catch (e) {
